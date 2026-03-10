@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sensai-mcp-servers
+data:
+  mcp-servers.json: |
+    {
+      "atlassian": {
+        "url": "http://mcp-atlassian:8080/mcp"
+      },
+      "github": {
+        "url": "http://mcp-github:8082/mcp"
+      }
+    }
