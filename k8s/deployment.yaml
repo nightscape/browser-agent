@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sensai
+  labels:
+    app: sensai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sensai
+  template:
+    metadata:
+      labels:
+        app: sensai
+    spec:
+      containers:
+        - name: sensai
+          image: sensai:latest
+          ports:
+            - containerPort: 4222
+          env:
+            - name: PORT
+              value: "4222"
+            - name: CORS_ORIGIN
+              value: "*"
+            - name: AGENTS_DIR
+              value: /etc/sensai/agents
+            - name: MCP_SERVERS_CONFIG
+              value: /etc/sensai/mcp-servers.json
+            # Optional: override the default system prompt
+            # - name: SYSTEM_PROMPT_FILE
+            #   value: /etc/sensai/system-prompt.txt
+            # Corporate forward proxy (undici EnvHttpProxyAgent)
+            # - name: HTTPS_PROXY
+            #   value: http://proxy.corp.example.com:8080
+            # - name: NO_PROXY
+            #   value: .cluster.local,mcp-atlassian,mcp-github
+          volumeMounts:
+            - name: agents
+              mountPath: /etc/sensai/agents
+              readOnly: true
+            - name: mcp-servers
+              mountPath: /etc/sensai/mcp-servers.json
+              subPath: mcp-servers.json
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4222
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: agents
+          configMap:
+            name: sensai-agents
+        - name: mcp-servers
+          configMap:
+            name: sensai-mcp-servers
