@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import Handlebars from "handlebars";
 
 const DEFAULT_PROMPT = `You are a helpful AI assistant for developers at Deutsche Börse Group (DBG).
 
@@ -15,17 +16,32 @@ When answering:
 - If you're unsure, say so rather than guessing.
 - Keep responses focused and developer-friendly.`;
 
-let cached: string | null = null;
+let cachedTemplate: string | null = null;
 
-export async function getSystemPrompt(): Promise<string> {
-  if (cached) return cached;
+async function getTemplate(): Promise<string> {
+  if (cachedTemplate) return cachedTemplate;
 
   const filePath = process.env.SYSTEM_PROMPT_FILE;
   if (filePath) {
-    cached = await readFile(filePath, "utf-8");
+    cachedTemplate = await readFile(filePath, "utf-8");
   } else {
-    cached = DEFAULT_PROMPT;
+    cachedTemplate = DEFAULT_PROMPT;
   }
 
-  return cached;
+  return cachedTemplate;
+}
+
+export async function getSystemPrompt(
+  vars: Record<string, string> = {},
+): Promise<string> {
+  const template = await getTemplate();
+  return renderTemplate(template, vars);
+}
+
+export function renderTemplate(
+  template: string,
+  vars: Record<string, string>,
+): string {
+  const compiled = Handlebars.compile(template, { noEscape: true });
+  return compiled(vars);
 }

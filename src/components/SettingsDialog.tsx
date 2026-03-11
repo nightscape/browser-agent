@@ -24,6 +24,8 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
   const [mcpToken, setMcpToken] = useState("");
   const [copilotAuth, setCopilotAuth] = useState<CopilotAuthState>({ step: "idle" });
   const [copilotModels, setCopilotModels] = useState<{ id: string; name?: string }[]>([]);
+  const [varName, setVarName] = useState("");
+  const [varValue, setVarValue] = useState("");
 
   const isCopilot = draft.provider === "copilot";
   const hasCopilotToken = isCopilot && !!draft.apiKey;
@@ -427,6 +429,78 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           />
           <button
             onClick={addMcpServer}
+            className="rounded-lg bg-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-600"
+          >
+            Add
+          </button>
+        </div>
+
+        <hr className="my-4 border-neutral-800" />
+
+        {/* ── Template Variables ───────────────────────────────────── */}
+        <h3 className="mb-1 text-sm font-semibold text-neutral-200">
+          Prompt Variables
+        </h3>
+        <p className="mb-2 text-xs text-neutral-500">
+          Use <code className="text-neutral-400">{"{{varName}}"}</code> in agent
+          prompts.{" "}
+          <code className="text-neutral-400">{"{{#if varName}}...{{/if}}"}</code>{" "}
+          for conditionals.
+        </p>
+
+        {Object.entries(draft.templateVars).map(([name, value]) => (
+          <div
+            key={name}
+            className="mb-2 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2 text-sm"
+          >
+            <span className="shrink-0 font-mono text-neutral-400">{name}</span>
+            <span className="text-neutral-600">=</span>
+            <input
+              value={value}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  templateVars: { ...draft.templateVars, [name]: e.target.value },
+                })
+              }
+              className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-blue-500"
+            />
+            <button
+              onClick={() => {
+                const vars = { ...draft.templateVars };
+                delete vars[name];
+                setDraft({ ...draft, templateVars: vars });
+              }}
+              className="text-neutral-500 hover:text-red-400"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+
+        <div className="flex gap-2">
+          <input
+            placeholder="Name"
+            value={varName}
+            onChange={(e) => setVarName(e.target.value)}
+            className="w-32 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-xs text-neutral-100 outline-none"
+          />
+          <input
+            placeholder="Value"
+            value={varValue}
+            onChange={(e) => setVarValue(e.target.value)}
+            className="flex-1 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-xs text-neutral-100 outline-none"
+          />
+          <button
+            onClick={() => {
+              if (!varName) return;
+              setDraft({
+                ...draft,
+                templateVars: { ...draft.templateVars, [varName]: varValue },
+              });
+              setVarName("");
+              setVarValue("");
+            }}
             className="rounded-lg bg-neutral-700 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-600"
           >
             Add
