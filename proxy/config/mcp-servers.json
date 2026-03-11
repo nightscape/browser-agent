@@ -1,0 +1,10 @@
+{
+  "atlassian": {
+    "url": "http://mcp-atlassian:8080/mcp",
+    "tokenUrl": "https://id.atlassian.com/manage-profile/security/api-tokens"
+  },
+  "github": {
+    "url": "http://mcp-github:8082/mcp",
+    "tokenUrl": "https://github.com/settings/tokens"
+  }
+}
