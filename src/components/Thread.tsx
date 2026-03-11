@@ -15,7 +15,22 @@ const UserMessage = () => (
   </MessagePrimitive.Root>
 );
 
-const StreamdownText = () => <StreamdownTextPrimitive />;
+const StreamdownText = () => (
+  <StreamdownTextPrimitive
+    components={{
+      a: ({ href, children, ...props }) => (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+        >
+          {children}
+        </a>
+      ),
+    }}
+  />
+);
 
 const ToolFallback: ToolCallMessagePartComponent = ({
   toolName,

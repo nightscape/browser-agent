@@ -112,7 +112,8 @@ class IndexedDBThreadHistoryAdapter implements ThreadHistoryAdapter {
 
 // ---- Thread list adapter with embedded history provider ----
 
-type AssistantStream = ReadableStream;
+import type { AssistantStream, AssistantStreamChunk } from "assistant-stream";
+import type { ThreadMessage } from "@assistant-ui/core";
 
 function HistoryProvider({ children }: { children: React.ReactNode }) {
   const aui = useAui();
@@ -127,7 +128,9 @@ function HistoryProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function createIndexedDBThreadListAdapter(): RemoteThreadListAdapter {
+export function createIndexedDBThreadListAdapter(
+  getHeaders: () => Record<string, string>,
+): RemoteThreadListAdapter {
   return {
     async list(): Promise<RemoteThreadListResponse> {
       const threads = await listThreads();
@@ -184,8 +187,108 @@ export function createIndexedDBThreadListAdapter(): RemoteThreadListAdapter {
       await deleteThreadFromDB(remoteId);
     },
 
-    async generateTitle(): Promise<AssistantStream> {
-      return new ReadableStream() as AssistantStream;
+    async generateTitle(
+      remoteId: string,
+      messages: readonly ThreadMessage[],
+    ): Promise<AssistantStream> {
+      function extractText(msg: ThreadMessage): string {
+        return msg.content
+          .filter((p) => p.type === "text")
+          .map((p) => p.text)
+          .join(" ")
+          .slice(0, 500);
+      }
+
+      const firstUser = messages.find((m) => m.role === "user");
+      if (!firstUser) return new ReadableStream() as AssistantStream;
+
+      const firstAssistant = messages.find((m) => m.role === "assistant");
+
+      const syntheticMessages = [
+        {
+          id: "title-ctx-user",
+          role: "user" as const,
+          parts: [{ type: "text" as const, text: extractText(firstUser) }],
+        },
+        ...(firstAssistant
+          ? [
+              {
+                id: "title-ctx-assistant",
+                role: "assistant" as const,
+                parts: [
+                  {
+                    type: "text" as const,
+                    text: extractText(firstAssistant),
+                  },
+                ],
+              },
+            ]
+          : []),
+        {
+          id: "title-prompt",
+          role: "user" as const,
+          parts: [
+            {
+              type: "text" as const,
+              text: "Summarize the previous messages into a short conversation title (max 6 words). Reply with ONLY the title, no quotes, no extra punctuation.",
+            },
+          ],
+        },
+      ];
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getHeaders() },
+        body: JSON.stringify({ messages: syntheticMessages }),
+      });
+
+      // Parse the SSE response and build an AssistantStream.
+      // AI SDK's toUIMessageStreamResponse sends SSE events with JSON data
+      // containing { type: "text-delta", delta: "..." } for text chunks.
+      let fullTitle = "";
+      const stream = new ReadableStream<AssistantStreamChunk>({
+        async start(controller) {
+          const reader = response.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          controller.enqueue({ path: [0], type: "part-start", part: { type: "text" } });
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split("\n");
+            buffer = lines.pop()!;
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const payload = line.slice(6);
+              if (payload === "[DONE]") continue;
+              const chunk = JSON.parse(payload);
+              if (chunk.type === "text-delta") {
+                const text = chunk.delta ?? chunk.textDelta ?? "";
+                fullTitle += text;
+                controller.enqueue({ path: [0], type: "text-delta", textDelta: text });
+              }
+            }
+          }
+
+          controller.enqueue({ path: [0], type: "part-finish" });
+          controller.close();
+
+          if (fullTitle) {
+            const thread = await getThread(remoteId);
+            if (thread) {
+              thread.title = fullTitle;
+              await putThread(thread);
+            }
+          }
+        },
+      });
+
+      return stream;
     },
 
     async fetch(threadId: string): Promise<RemoteThreadMetadata> {

@@ -453,7 +453,14 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
             key={name}
             className="mb-2 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2 text-sm"
           >
-            <span className="shrink-0 font-mono text-neutral-400">{name}</span>
+            <span className="shrink-0 font-mono text-neutral-400">
+              {name}
+              {name in envConfig.templateVars && (
+                <span className="ml-1 rounded bg-neutral-700 px-1 py-0.5 font-sans text-[10px] text-neutral-500">
+                  env
+                </span>
+              )}
+            </span>
             <span className="text-neutral-600">=</span>
             <input
               value={value}
