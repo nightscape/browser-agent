@@ -28,6 +28,17 @@ spec:
               value: /etc/sensai/agents
             - name: MCP_SERVERS_CONFIG
               value: /etc/sensai/mcp-servers.json
+            # Default agent pre-selected in the UI
+            # - name: DEFAULT_AGENT
+            #   value: statistix-sensai
+            # Comma-separated LLM providers (order = UI order, first = default)
+            # - name: LLM_PROVIDERS
+            #   value: anthropic,openai
+            # Comma-separated models per provider (order = UI order, first = default)
+            # - name: LLM_MODELS_ANTHROPIC
+            #   value: claude-sonnet-4-20250514,claude-haiku-4-5-20251001
+            # - name: LLM_MODELS_OPENAI
+            #   value: gpt-4o,gpt-4o-mini
             # Optional: override the default system prompt
             # - name: SYSTEM_PROMPT_FILE
             #   value: /etc/sensai/system-prompt.txt

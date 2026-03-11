@@ -1,3 +1,5 @@
+import { openDB } from "./db";
+
 export interface McpServerEntry {
   url: string;
   token: string;
@@ -18,28 +20,6 @@ const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
   mcpServers: {},
 };
-
-const DB_NAME = "sensai";
-const DB_VERSION = 1;
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings");
-      }
-      if (!db.objectStoreNames.contains("threads")) {
-        db.createObjectStore("threads", { keyPath: "id" });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
 
 export async function loadSettings(): Promise<Settings> {
   const db = await openDB();
