@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import type { Settings, McpServerEntry } from "../storage/settings";
-import type { AgentInfo, PredefinedMcpServer } from "../App";
+import type { AgentInfo, PredefinedMcpServer, EnvConfig } from "../App";
 
 interface Props {
   settings: Settings;
   agents: AgentInfo[];
   predefinedMcpServers: Record<string, PredefinedMcpServer>;
+  envConfig: EnvConfig;
   onSave: (settings: Settings) => void;
   onClose: () => void;
 }
@@ -16,7 +17,7 @@ type CopilotAuthState =
   | { step: "done" }
   | { step: "error"; message: string };
 
-export function SettingsDialog({ settings, agents, predefinedMcpServers, onSave, onClose }: Props) {
+export function SettingsDialog({ settings, agents, predefinedMcpServers, envConfig, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<Settings>({ ...settings });
   const [mcpName, setMcpName] = useState("");
   const [mcpUrl, setMcpUrl] = useState("");
@@ -167,42 +168,96 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, onSave,
 
         {/* ── LLM settings ────────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-400">Provider</span>
-            <select
-              value={draft.provider}
-              onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
-              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
-            >
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="lmstudio">LM Studio</option>
-              <option value="copilot">GitHub Copilot</option>
-            </select>
-          </label>
-
-          {copilotModels.length > 0 ? (
+          {envConfig.providers.length === 1 ? (
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-neutral-400">Model</span>
+              <span className="text-xs text-neutral-400">Provider</span>
+              <input
+                type="text"
+                value={envConfig.providers[0]!.label}
+                disabled
+                className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-400 outline-none"
+              />
+            </label>
+          ) : (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-neutral-400">Provider</span>
               <select
-                value={draft.model}
-                onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                value={draft.provider}
+                onChange={(e) => {
+                  const newProvider = e.target.value;
+                  const pc = envConfig.providers.find((p) => p.id === newProvider);
+                  const newModel = pc?.models[0] ?? draft.model;
+                  setDraft({ ...draft, provider: newProvider, model: newModel });
+                }}
                 className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
               >
-                {!copilotModels.some((m) => m.id === draft.model) && (
-                  <option value={draft.model}>{draft.model}</option>
-                )}
-                {copilotModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name ? `${m.name} (${m.id})` : m.id}
-                  </option>
+                {envConfig.providers.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
               </select>
             </label>
-          ) : (
-            field("Model", "model")
           )}
+
+          {(() => {
+            const pc = envConfig.providers.find((p) => p.id === draft.provider);
+            const configuredModels = pc?.models ?? [];
+            const copilotHasModels = copilotModels.length > 0;
+
+            if (copilotHasModels) {
+              return (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-neutral-400">Model</span>
+                  <select
+                    value={draft.model}
+                    onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                    className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+                  >
+                    {!copilotModels.some((m) => m.id === draft.model) && (
+                      <option value={draft.model}>{draft.model}</option>
+                    )}
+                    {copilotModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name ? `${m.name} (${m.id})` : m.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            }
+
+            if (configuredModels.length === 1) {
+              return (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-neutral-400">Model</span>
+                  <input
+                    type="text"
+                    value={configuredModels[0]}
+                    disabled
+                    className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-400 outline-none"
+                  />
+                </label>
+              );
+            }
+
+            if (configuredModels.length > 1) {
+              return (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-neutral-400">Model</span>
+                  <select
+                    value={draft.model}
+                    onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                    className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+                  >
+                    {configuredModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+              );
+            }
+
+            return field("Model", "model");
+          })()}
 
           {isCopilot ? (
             <div className="flex flex-col gap-2">

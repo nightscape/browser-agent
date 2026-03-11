@@ -23,6 +23,7 @@ import {
   buildMergedServers,
   type McpServerEntry,
 } from "./predefined-mcp-servers.js";
+import { loadEnvConfig } from "./env-config.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -46,6 +47,9 @@ app.get("/api/agents/:name", async (c) => {
   const agent = await loadAgent(c.req.param("name"));
   return c.json(agent);
 });
+
+// ── Env-based config (providers, models, default agent) ─────────────────
+app.get("/api/config", (c) => c.json(loadEnvConfig()));
 
 // ── Predefined MCP servers (so frontend can display them) ───────────────
 app.get("/api/mcp-servers/predefined", async (c) => {

@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import {
+  unstable_useRemoteThreadListRuntime,
+} from "@assistant-ui/react";
 import {
   useChatRuntime,
   AssistantChatTransport,
@@ -12,6 +15,7 @@ import {
   saveSettings,
   type Settings,
 } from "./storage/settings";
+import { createIndexedDBThreadListAdapter } from "./storage/adapters";
 
 export interface AgentInfo {
   name: string;
@@ -23,8 +27,19 @@ export interface PredefinedMcpServer {
   tokenUrl?: string;
 }
 
-function AppInner({ settings }: { settings: Settings }) {
-  const runtime = useChatRuntime({
+export interface ProviderConfig {
+  id: string;
+  label: string;
+  models: string[];
+}
+
+export interface EnvConfig {
+  defaultAgent?: string;
+  providers: ProviderConfig[];
+}
+
+function ChatRuntime({ settings }: { settings: Settings }) {
+  return useChatRuntime({
     transport: new AssistantChatTransport({
       api: "/api/chat",
       headers: () => ({
@@ -38,6 +53,17 @@ function AppInner({ settings }: { settings: Settings }) {
         ...(settings.activeAgent ? { "X-Agent": settings.activeAgent } : {}),
       }),
     }),
+  });
+}
+
+function AppInner({ settings }: { settings: Settings }) {
+  const adapter = useMemo(() => createIndexedDBThreadListAdapter(), []);
+
+  const runtime = unstable_useRemoteThreadListRuntime({
+    runtimeHook: function RuntimeHook() {
+      return ChatRuntime({ settings });
+    },
+    adapter,
   });
 
   return (
@@ -57,22 +83,37 @@ export function App() {
   const [predefinedMcpServers, setPredefinedMcpServers] = useState<
     Record<string, PredefinedMcpServer>
   >({});
+  const [envConfig, setEnvConfig] = useState<EnvConfig | null>(null);
 
   useEffect(() => {
-    loadSettings().then((s) => {
+    Promise.all([
+      loadSettings(),
+      fetch("/api/config").then((r) => r.json()) as Promise<EnvConfig>,
+      fetch("/api/agents").then((r) => r.json()),
+      fetch("/api/mcp-servers/predefined").then((r) => r.json()),
+    ]).then(([s, config, agentList, mcpServers]) => {
+      setEnvConfig(config);
+      setAgents(agentList);
+      setPredefinedMcpServers(mcpServers);
+
+      // Apply env config defaults to settings if they haven't been customised
+      const defaultProvider = config.providers[0]?.id;
+      const defaultModel = config.providers[0]?.models[0];
+      if (defaultProvider && s.provider === "anthropic" && defaultProvider !== "anthropic") {
+        s.provider = defaultProvider;
+      }
+      if (defaultModel && s.model === "claude-sonnet-4-20250514" && defaultModel !== "claude-sonnet-4-20250514") {
+        s.model = defaultModel;
+      }
+      if (config.defaultAgent && !s.activeAgent) {
+        s.activeAgent = config.defaultAgent;
+      }
+
       setSettings(s);
       if (!s.apiKey && s.provider !== "lmstudio") {
         setShowSettings(true);
       }
     });
-
-    fetch("/api/agents")
-      .then((r) => r.json())
-      .then(setAgents);
-
-    fetch("/api/mcp-servers/predefined")
-      .then((r) => r.json())
-      .then(setPredefinedMcpServers);
   }, []);
 
   if (!settings) {
@@ -107,11 +148,12 @@ export function App() {
         <AppInner settings={settings} />
       </div>
 
-      {showSettings && (
+      {showSettings && envConfig && (
         <SettingsDialog
           settings={settings}
           agents={agents}
           predefinedMcpServers={predefinedMcpServers}
+          envConfig={envConfig}
           onSave={async (updated) => {
             await saveSettings(updated);
             setSettings(updated);
