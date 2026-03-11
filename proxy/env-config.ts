@@ -15,6 +15,7 @@ export interface ProviderConfig {
 export interface EnvConfig {
   defaultAgent?: string;
   providers: ProviderConfig[];
+  templateVars: Record<string, string>;
 }
 
 export function loadEnvConfig(): EnvConfig {
@@ -38,5 +39,14 @@ export function loadEnvConfig(): EnvConfig {
     };
   });
 
-  return { defaultAgent, providers };
+  const templateVars: Record<string, string> = {};
+  const prefix = "TEMPLATE_VAR_";
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith(prefix) && value) {
+      const varName = key.slice(prefix.length).toLowerCase().replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      templateVars[varName] = value;
+    }
+  }
+
+  return { defaultAgent, providers, templateVars };
 }
