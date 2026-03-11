@@ -1,0 +1,48 @@
+{
+  "name": "sensai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx proxy/server.ts",
+    "build": "tsc && vite build && npm run build:widget",
+    "build:widget": "vite build --config vite.config.widget.ts",
+    "start": "NODE_ENV=production node --import tsx proxy/server.ts",
+    "pretest": "npm run build:widget",
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "build:debugger": "npx esbuild tools/page-object-debugger.ts --bundle --platform=node --format=esm --external:@playwright/test --banner:js=\"import{createRequire as _cr}from'module';const require=_cr(import.meta.url);\" --outfile=dist/page-object-debugger.mjs",
+    "build:mcp-codegen": "npx esbuild tools/generate-mcp-code.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as _cr}from'module';const require=_cr(import.meta.url);\" --outfile=dist/generate-mcp-code.mjs",
+    "build:po-tools": "npm run build:debugger && npm run build:mcp-codegen"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^25.4.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/openai-compatible": "^2.0.35",
+    "@ai-sdk/react": "^3.0.118",
+    "@assistant-ui/react": "^0.12.16",
+    "@assistant-ui/react-ai-sdk": "^1.3.13",
+    "@assistant-ui/react-streamdown": "^0.1.5",
+    "@hono/node-server": "^1.19.11",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "ai": "^6.0.116",
+    "genson-js": "^0.0.8",
+    "hono": "^4.12.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.2.1",
+    "tsx": "^4.21.0",
+    "undici": "^7.22.0",
+    "yaml": "^2.8.2"
+  }
+}

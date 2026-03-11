@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-widget
+.git
+.jj
+.env
+.claude
+.playwright-mcp
+*.db
+*.db-shm
+*.db-wal
