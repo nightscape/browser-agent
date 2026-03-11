@@ -12,6 +12,7 @@ export interface Settings {
   baseUrl?: string;
   mcpServers: Record<string, McpServerEntry>;
   activeAgent?: string;
+  templateVars: Record<string, string>;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -19,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
   model: "claude-sonnet-4-20250514",
   apiKey: "",
   mcpServers: {},
+  templateVars: {},
 };
 
 export async function loadSettings(): Promise<Settings> {
@@ -26,7 +28,11 @@ export async function loadSettings(): Promise<Settings> {
   return new Promise((resolve) => {
     const tx = db.transaction("settings", "readonly");
     const req = tx.objectStore("settings").get("current");
-    req.onsuccess = () => resolve(req.result ?? { ...DEFAULT_SETTINGS });
+    req.onsuccess = () => {
+      const stored = req.result ?? { ...DEFAULT_SETTINGS };
+      if (!stored.templateVars) stored.templateVars = {};
+      resolve(stored);
+    };
   });
 }
 

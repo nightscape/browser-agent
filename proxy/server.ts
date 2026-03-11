@@ -15,7 +15,7 @@ import {
 } from "ai";
 import { resolveModel } from "./providers.js";
 import { getMcpTools } from "./mcp-tools.js";
-import { getSystemPrompt } from "./system-prompt.js";
+import { getSystemPrompt, renderTemplate } from "./system-prompt.js";
 import { copilotAuthRoutes } from "./copilot-auth.js";
 import { listAgents, loadAgent } from "./agents.js";
 import {
@@ -81,13 +81,19 @@ app.post("/api/chat", async (c) => {
 
   let tools: ToolSet = await getMcpTools(mergedJson);
 
+  // Parse template variables from client
+  const templateVarsJson = c.req.header("X-Template-Vars");
+  const templateVars: Record<string, string> = templateVarsJson
+    ? JSON.parse(templateVarsJson)
+    : {};
+
   // If an agent is selected, use its system prompt and filter tools
-  let systemPrompt = await getSystemPrompt();
+  let systemPrompt = await getSystemPrompt(templateVars);
   const agentName = c.req.header("X-Agent");
 
   if (agentName) {
     const agent = await loadAgent(agentName);
-    systemPrompt = agent.systemPrompt;
+    systemPrompt = renderTemplate(agent.systemPrompt, templateVars);
 
     if (agent.tools.length > 0) {
       const allowedSet = new Set(

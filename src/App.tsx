@@ -51,6 +51,9 @@ function ChatRuntime({ settings }: { settings: Settings }) {
           ? { "X-MCP-Servers": JSON.stringify(settings.mcpServers) }
           : {}),
         ...(settings.activeAgent ? { "X-Agent": settings.activeAgent } : {}),
+        ...(Object.keys(settings.templateVars).length > 0
+          ? { "X-Template-Vars": JSON.stringify(settings.templateVars) }
+          : {}),
       }),
     }),
   });
