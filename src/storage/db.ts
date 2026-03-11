@@ -1,5 +1,5 @@
 const DB_NAME = "sensai";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let cachedDB: IDBDatabase | null = null;
 
@@ -30,6 +30,10 @@ export function openDB(): Promise<IDBDatabase> {
           keyPath: "messageId",
         });
         msgStore.createIndex("threadId", "threadId");
+      }
+
+      if (!db.objectStoreNames.contains("skills")) {
+        db.createObjectStore("skills", { keyPath: "name" });
       }
     };
 

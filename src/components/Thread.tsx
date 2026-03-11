@@ -1,11 +1,18 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
+  useComposerRuntime,
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
+import type { SkillDefinition } from "../../shared/skills";
+
+interface ThreadProps {
+  skills: SkillDefinition[];
+  onActivateSkill: (skillName: string) => void;
+}
 
 const UserMessage = () => (
   <MessagePrimitive.Root className="mb-4 flex justify-end">
@@ -94,28 +101,140 @@ const AssistantMessage = () => (
   </MessagePrimitive.Root>
 );
 
-const Composer = () => (
-  <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 border-t border-neutral-800 bg-neutral-900 p-4">
-    <ComposerPrimitive.Input
-      placeholder="Ask something..."
-      className="min-h-[40px] flex-1 resize-none rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-blue-500"
-    />
-    <ComposerPrimitive.Send className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-500 disabled:opacity-40">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        className="h-5 w-5"
-      >
-        <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.635a.75.75 0 0 0 0-1.403L3.105 2.288Z" />
-      </svg>
-    </ComposerPrimitive.Send>
-  </ComposerPrimitive.Root>
-);
+function SkillAutocomplete({
+  skills,
+  filter,
+  selectedIndex,
+  onSelect,
+}: {
+  skills: SkillDefinition[];
+  filter: string;
+  selectedIndex: number;
+  onSelect: (name: string) => void;
+}) {
+  const query = filter.slice(1).toLowerCase();
+  const matches = skills.filter((s) => s.name.toLowerCase().includes(query));
+  if (matches.length === 0) return null;
 
-export function Thread() {
   return (
-    <ThreadPrimitive.Root className="flex h-full flex-col">
+    <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-neutral-700 bg-neutral-900 shadow-lg overflow-hidden">
+      {matches.map((skill, i) => (
+        <button
+          key={skill.name}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSelect(skill.name);
+          }}
+          className={`flex w-full flex-col px-3 py-2 text-left ${
+            i === selectedIndex % matches.length
+              ? "bg-neutral-800"
+              : "hover:bg-neutral-800"
+          }`}
+        >
+          <span className="text-sm text-neutral-200">/{skill.name}</span>
+          <span className="truncate text-xs text-neutral-500">{skill.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void }) {
+  const composerRuntime = useComposerRuntime();
+  const [inputValue, setInputValue] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const isSlashQuery = inputValue.startsWith("/") && !inputValue.includes(" ");
+  const query = isSlashQuery ? inputValue.slice(1).toLowerCase() : "";
+  const matches = isSlashQuery
+    ? skills.filter((s) => s.name.toLowerCase().includes(query))
+    : [];
+  const shouldShow = showAutocomplete && matches.length > 0;
+
+  const selectSkill = useCallback(
+    (name: string) => {
+      composerRuntime.setText("");
+      setInputValue("");
+      setShowAutocomplete(false);
+      onActivateSkill(name);
+    },
+    [composerRuntime, onActivateSkill],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!shouldShow) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((i) => (i + 1) % matches.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((i) => (i - 1 + matches.length) % matches.length);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        selectSkill(matches[selectedIndex % matches.length]!.name);
+      } else if (e.key === "Escape") {
+        setShowAutocomplete(false);
+      }
+    },
+    [shouldShow, matches, selectedIndex, selectSkill],
+  );
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInputValue(val);
+    setShowAutocomplete(val.startsWith("/") && !val.includes(" "));
+    setSelectedIndex(0);
+  }, []);
+
+  // Keep inputValue in sync when composer is cleared externally
+  useEffect(() => {
+    return composerRuntime.subscribe(() => {
+      const text = composerRuntime.getState().text;
+      if (text !== inputValue) {
+        setInputValue(text);
+        if (!text.startsWith("/")) setShowAutocomplete(false);
+      }
+    });
+  }, [composerRuntime]);
+
+  return (
+    <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 border-t border-neutral-800 bg-neutral-900 p-4">
+      <div ref={containerRef} className="relative flex-1">
+        {shouldShow && (
+          <SkillAutocomplete
+            skills={skills}
+            filter={inputValue}
+            selectedIndex={selectedIndex}
+            onSelect={selectSkill}
+          />
+        )}
+        <ComposerPrimitive.Input
+          placeholder="Ask something... (/ for skills)"
+          className="min-h-[40px] w-full resize-none rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-blue-500"
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+        />
+      </div>
+      <ComposerPrimitive.Send className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-500 disabled:opacity-40">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className="h-5 w-5"
+        >
+          <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.635a.75.75 0 0 0 0-1.403L3.105 2.288Z" />
+        </svg>
+      </ComposerPrimitive.Send>
+    </ComposerPrimitive.Root>
+  );
+}
+
+export function Thread({ skills, onActivateSkill }: ThreadProps) {
+  return (
+    <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4 py-8">
           <ThreadPrimitive.Empty>
@@ -135,7 +254,7 @@ export function Thread() {
           />
         </div>
       </ThreadPrimitive.Viewport>
-      <Composer />
+      <Composer skills={skills} onActivateSkill={onActivateSkill} />
     </ThreadPrimitive.Root>
   );
 }

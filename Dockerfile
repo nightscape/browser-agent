@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json vite.config.ts index.html ./
+COPY shared/ shared/
 COPY src/ src/
 COPY proxy/ proxy/
 RUN npm run build
@@ -13,6 +14,7 @@ FROM node:22-slim
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+COPY shared/ shared/
 COPY proxy/ proxy/
 
 COPY --from=build /app/dist/ dist/

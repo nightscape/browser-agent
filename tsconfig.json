@@ -15,5 +15,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["src", "proxy"]
+  "include": ["shared", "src", "proxy"]
 }

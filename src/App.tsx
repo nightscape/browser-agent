@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime,
+  useComposerRuntime,
 } from "@assistant-ui/react";
 import {
   useChatRuntime,
@@ -10,12 +11,17 @@ import {
 import { Thread } from "./components/Thread";
 import { ThreadList } from "./components/ThreadList";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { ExportImportDialog } from "./components/ExportImportDialog";
+import { SkillVariableDialog } from "./components/SkillVariableDialog";
+import { SkillEditorDialog } from "./components/SkillEditorDialog";
 import {
   loadSettings,
   saveSettings,
   type Settings,
 } from "./storage/settings";
 import { createIndexedDBThreadListAdapter } from "./storage/adapters";
+import type { SkillDefinition } from "../shared/skills";
+import { listUserSkills, saveUserSkill } from "./storage/skills";
 
 export interface AgentInfo {
   name: string;
@@ -60,7 +66,31 @@ function ChatRuntime({ settings }: { settings: Settings }) {
   });
 }
 
-function AppInner({ settings }: { settings: Settings }) {
+function SkillMessageBridge({ sendRef }: { sendRef: React.MutableRefObject<((text: string) => void) | null> }) {
+  const composer = useComposerRuntime();
+  sendRef.current = useCallback(
+    (text: string) => {
+      composer.setText(text);
+      composer.send();
+    },
+    [composer],
+  );
+  return null;
+}
+
+function AppInner({
+  settings,
+  skills,
+  onActivateSkill,
+  onNewSkill,
+  sendRef,
+}: {
+  settings: Settings;
+  skills: SkillDefinition[];
+  onActivateSkill: (skillName: string) => void;
+  onNewSkill: () => void;
+  sendRef: React.MutableRefObject<((text: string) => void) | null>;
+}) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -86,9 +116,17 @@ function AppInner({ settings }: { settings: Settings }) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <SkillMessageBridge sendRef={sendRef} />
       <div className="grid h-dvh grid-cols-[260px_1fr]">
-        <ThreadList />
-        <Thread />
+        <ThreadList
+          skills={skills}
+          onSkillClick={onActivateSkill}
+          onNewSkill={onNewSkill}
+        />
+        <Thread
+          skills={skills}
+          onActivateSkill={onActivateSkill}
+        />
       </div>
     </AssistantRuntimeProvider>
   );
@@ -97,11 +135,16 @@ function AppInner({ settings }: { settings: Settings }) {
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showExportImport, setShowExportImport] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [predefinedMcpServers, setPredefinedMcpServers] = useState<
     Record<string, PredefinedMcpServer>
   >({});
   const [envConfig, setEnvConfig] = useState<EnvConfig | null>(null);
+  const [skills, setSkills] = useState<SkillDefinition[]>([]);
+  const [pendingSkill, setPendingSkill] = useState<SkillDefinition | null>(null);
+  const [showSkillEditor, setShowSkillEditor] = useState(false);
+  const sendRef = useRef<((text: string) => void) | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -109,10 +152,24 @@ export function App() {
       fetch("/api/config").then((r) => r.json()) as Promise<EnvConfig>,
       fetch("/api/agents").then((r) => r.json()),
       fetch("/api/mcp-servers/predefined").then((r) => r.json()),
-    ]).then(([s, config, agentList, mcpServers]) => {
+      fetch("/api/skills").then((r) => r.json()) as Promise<{ name: string; description: string }[]>,
+      listUserSkills(),
+    ]).then(([s, config, agentList, mcpServers, serverSkillSummaries, userSkills]) => {
       setEnvConfig(config);
       setAgents(agentList);
       setPredefinedMcpServers(mcpServers);
+
+      // Merge skills: fetch full definitions for server skills, then overlay user skills
+      Promise.all(
+        serverSkillSummaries.map((sk: { name: string }) =>
+          fetch(`/api/skills/${sk.name}`).then((r) => r.json()) as Promise<SkillDefinition>,
+        ),
+      ).then((serverSkills) => {
+        const merged = new Map<string, SkillDefinition>();
+        for (const sk of serverSkills) merged.set(sk.name, sk);
+        for (const sk of userSkills) merged.set(sk.name, sk);
+        setSkills(Array.from(merged.values()));
+      });
 
       // Apply env config defaults to settings if they haven't been customised
       const defaultProvider = config.providers[0]?.id;
@@ -126,7 +183,6 @@ export function App() {
       if (config.defaultAgent && !s.activeAgent) {
         s.activeAgent = config.defaultAgent;
       }
-      // Seed env-defined template vars as defaults (don't overwrite user values)
       for (const [key, value] of Object.entries(config.templateVars)) {
         if (!(key in s.templateVars)) {
           s.templateVars[key] = value;
@@ -140,6 +196,47 @@ export function App() {
     });
   }, []);
 
+  const handleActivateSkill = useCallback(
+    (skillName: string) => {
+      const skill = skills.find((s) => s.name === skillName);
+      if (!skill) return;
+
+      if (skill.variables.length > 0) {
+        setPendingSkill(skill);
+      } else {
+        // No variables — send template directly
+        sendSkillMessage(skill.template, skill.agent);
+      }
+    },
+    [skills, settings],
+  );
+
+  const sendSkillMessage = useCallback(
+    (text: string, agent?: string) => {
+      if (!settings) return;
+      if (agent) {
+        const updated = { ...settings, activeAgent: agent };
+        saveSettings(updated);
+        setSettings(updated);
+      }
+      // Use the bridge ref to send via the composer runtime
+      sendRef.current?.(text);
+    },
+    [settings],
+  );
+
+  const handleSkillEditorSave = useCallback(
+    async (skill: SkillDefinition) => {
+      await saveUserSkill(skill);
+      setSkills((prev) => {
+        const filtered = prev.filter((s) => s.name !== skill.name);
+        return [...filtered, skill];
+      });
+      setShowSkillEditor(false);
+    },
+    [],
+  );
+
   if (!settings) {
     return (
       <div className="flex h-dvh items-center justify-center text-neutral-500">
@@ -151,9 +248,25 @@ export function App() {
   return (
     <>
       <div className="relative h-dvh">
+        <div className="absolute right-4 top-3 z-10 flex gap-1">
+        <button
+          onClick={() => setShowExportImport(true)}
+          className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+          title="Export / Import"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="h-5 w-5"
+          >
+            <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+            <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+          </svg>
+        </button>
         <button
           onClick={() => setShowSettings(true)}
-          className="absolute right-4 top-3 z-10 rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+          className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
           title="Settings"
         >
           <svg
@@ -169,8 +282,46 @@ export function App() {
             />
           </svg>
         </button>
-        <AppInner settings={settings} />
+        </div>
+        <AppInner
+          settings={settings}
+          skills={skills}
+          onActivateSkill={handleActivateSkill}
+          onNewSkill={() => setShowSkillEditor(true)}
+          sendRef={sendRef}
+        />
       </div>
+
+      {pendingSkill && (
+        <SkillVariableDialog
+          skill={pendingSkill}
+          templateVars={settings.templateVars}
+          onSubmit={(expandedText) => {
+            sendSkillMessage(expandedText, pendingSkill.agent);
+            setPendingSkill(null);
+          }}
+          onCancel={() => setPendingSkill(null)}
+        />
+      )}
+
+      {showSkillEditor && (
+        <SkillEditorDialog
+          agents={agents}
+          onSave={handleSkillEditorSave}
+          onClose={() => setShowSkillEditor(false)}
+        />
+      )}
+
+      {showExportImport && (
+        <ExportImportDialog
+          settings={settings}
+          onImportComplete={async (updated) => {
+            await saveSettings(updated);
+            setSettings(updated);
+          }}
+          onClose={() => setShowExportImport(false)}
+        />
+      )}
 
       {showSettings && envConfig && (
         <SettingsDialog

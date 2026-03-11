@@ -18,6 +18,7 @@ import { getMcpTools } from "./mcp-tools.js";
 import { getSystemPrompt, renderTemplate } from "./system-prompt.js";
 import { copilotAuthRoutes } from "./copilot-auth.js";
 import { listAgents, loadAgent } from "./agents.js";
+import { listSkills, loadSkill } from "./skills.js";
 import {
   loadPredefinedMcpServerUrls,
   buildMergedServers,
@@ -46,6 +47,17 @@ app.get("/api/agents", async (c) => {
 app.get("/api/agents/:name", async (c) => {
   const agent = await loadAgent(c.req.param("name"));
   return c.json(agent);
+});
+
+// ── Skills ───────────────────────────────────────────────────────────────
+app.get("/api/skills", async (c) => {
+  const skills = await listSkills();
+  return c.json(skills);
+});
+
+app.get("/api/skills/:name", async (c) => {
+  const skill = await loadSkill(c.req.param("name"));
+  return c.json(skill);
 });
 
 // ── Env-based config (providers, models, default agent) ─────────────────
