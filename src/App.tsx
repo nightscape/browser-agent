@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import {
   unstable_useRemoteThreadListRuntime,
@@ -36,6 +36,7 @@ export interface ProviderConfig {
 export interface EnvConfig {
   defaultAgent?: string;
   providers: ProviderConfig[];
+  templateVars: Record<string, string>;
 }
 
 function ChatRuntime({ settings }: { settings: Settings }) {
@@ -60,7 +61,21 @@ function ChatRuntime({ settings }: { settings: Settings }) {
 }
 
 function AppInner({ settings }: { settings: Settings }) {
-  const adapter = useMemo(() => createIndexedDBThreadListAdapter(), []);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
+  const adapter = useMemo(
+    () =>
+      createIndexedDBThreadListAdapter(() => ({
+        "X-LLM-Provider": settingsRef.current.provider,
+        "X-LLM-Model": settingsRef.current.model,
+        "X-LLM-API-Key": settingsRef.current.apiKey,
+        ...(settingsRef.current.baseUrl
+          ? { "X-LLM-Base-URL": settingsRef.current.baseUrl }
+          : {}),
+      })),
+    [],
+  );
 
   const runtime = unstable_useRemoteThreadListRuntime({
     runtimeHook: function RuntimeHook() {
@@ -110,6 +125,12 @@ export function App() {
       }
       if (config.defaultAgent && !s.activeAgent) {
         s.activeAgent = config.defaultAgent;
+      }
+      // Seed env-defined template vars as defaults (don't overwrite user values)
+      for (const [key, value] of Object.entries(config.templateVars)) {
+        if (!(key in s.templateVars)) {
+          s.templateVars[key] = value;
+        }
       }
 
       setSettings(s);

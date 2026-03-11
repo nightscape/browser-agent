@@ -112,7 +112,9 @@ class IndexedDBThreadHistoryAdapter implements ThreadHistoryAdapter {
 
 // ---- Thread list adapter with embedded history provider ----
 
-type AssistantStream = ReadableStream;
+import type { AssistantStream } from "assistant-stream";
+import { UIMessageStreamDecoder } from "assistant-stream";
+import type { ThreadMessage } from "@assistant-ui/core";
 
 function HistoryProvider({ children }: { children: React.ReactNode }) {
   const aui = useAui();
@@ -127,7 +129,9 @@ function HistoryProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function createIndexedDBThreadListAdapter(): RemoteThreadListAdapter {
+export function createIndexedDBThreadListAdapter(
+  getHeaders: () => Record<string, string>,
+): RemoteThreadListAdapter {
   return {
     async list(): Promise<RemoteThreadListResponse> {
       const threads = await listThreads();
@@ -184,8 +188,84 @@ export function createIndexedDBThreadListAdapter(): RemoteThreadListAdapter {
       await deleteThreadFromDB(remoteId);
     },
 
-    async generateTitle(): Promise<AssistantStream> {
-      return new ReadableStream() as AssistantStream;
+    async generateTitle(
+      remoteId: string,
+      messages: readonly ThreadMessage[],
+    ): Promise<AssistantStream> {
+      function extractText(msg: ThreadMessage): string {
+        return msg.content
+          .filter((p) => p.type === "text")
+          .map((p) => p.text)
+          .join(" ")
+          .slice(0, 500);
+      }
+
+      const firstUser = messages.find((m) => m.role === "user");
+      if (!firstUser) return new ReadableStream() as AssistantStream;
+
+      const firstAssistant = messages.find((m) => m.role === "assistant");
+
+      const syntheticMessages = [
+        {
+          id: "title-ctx-user",
+          role: "user" as const,
+          parts: [{ type: "text" as const, text: extractText(firstUser) }],
+        },
+        ...(firstAssistant
+          ? [
+              {
+                id: "title-ctx-assistant",
+                role: "assistant" as const,
+                parts: [
+                  {
+                    type: "text" as const,
+                    text: extractText(firstAssistant),
+                  },
+                ],
+              },
+            ]
+          : []),
+        {
+          id: "title-prompt",
+          role: "user" as const,
+          parts: [
+            {
+              type: "text" as const,
+              text: "Summarize the previous messages into a short conversation title (max 6 words). Reply with ONLY the title, no quotes, no extra punctuation.",
+            },
+          ],
+        },
+      ];
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getHeaders() },
+        body: JSON.stringify({ messages: syntheticMessages }),
+      });
+
+      const stream = response
+        .body!.pipeThrough(new UIMessageStreamDecoder());
+
+      // Persist the final title once the stream completes
+      const [forConsumer, forPersist] = stream.tee();
+      (async () => {
+        let title = "";
+        const reader = forPersist.getReader();
+        while (true) {
+          const { done, value: chunk } = await reader.read();
+          if (done) break;
+          if (chunk.type === "text-delta") title += chunk.textDelta;
+        }
+        if (title) {
+          const thread = await getThread(remoteId);
+          if (thread) {
+            thread.title = title;
+            await putThread(thread);
+          }
+        }
+      })();
+
+      return forConsumer;
     },
 
     async fetch(threadId: string): Promise<RemoteThreadMetadata> {

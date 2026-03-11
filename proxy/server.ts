@@ -81,11 +81,13 @@ app.post("/api/chat", async (c) => {
 
   let tools: ToolSet = await getMcpTools(mergedJson);
 
-  // Parse template variables from client
+  // Merge env-defined template vars with client-provided ones (client wins)
+  const envVars = loadEnvConfig().templateVars;
   const templateVarsJson = c.req.header("X-Template-Vars");
-  const templateVars: Record<string, string> = templateVarsJson
+  const clientVars: Record<string, string> = templateVarsJson
     ? JSON.parse(templateVarsJson)
     : {};
+  const templateVars: Record<string, string> = { ...envVars, ...clientVars };
 
   // If an agent is selected, use its system prompt and filter tools
   let systemPrompt = await getSystemPrompt(templateVars);
