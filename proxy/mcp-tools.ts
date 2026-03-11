@@ -1,6 +1,22 @@
 import { tool, jsonSchema, type ToolSet } from "ai";
 import { McpClient } from "./mcp-client.js";
 
+// ~40k tokens ≈ 160k chars; leave headroom for the rest of the conversation
+const MAX_RESULT_CHARS = 100_000;
+
+function truncateResult(result: unknown): unknown {
+  const text = JSON.stringify(result);
+  if (text.length <= MAX_RESULT_CHARS) return result;
+
+  const truncated = text.slice(0, MAX_RESULT_CHARS);
+  return {
+    _truncated: true,
+    _originalLength: text.length,
+    _message: `Result truncated from ${text.length} to ${MAX_RESULT_CHARS} chars. Ask for specific sections or use filters/pagination if the tool supports them.`,
+    content: truncated,
+  };
+}
+
 interface McpServerEntry {
   url: string;
   token: string;
@@ -53,7 +69,7 @@ export async function getMcpTools(
       allTools[qualifiedName] = tool({
         description: `[${serverName}] ${t.description}`,
         inputSchema: jsonSchema(t.inputSchema),
-        execute: async (args) => client.callTool(t.name, args),
+        execute: async (args) => truncateResult(await client.callTool(t.name, args)),
       });
     }
   }
