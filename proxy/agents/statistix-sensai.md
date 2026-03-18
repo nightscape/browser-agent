@@ -21,7 +21,6 @@ tools:
   - atlassian/jira_get_worklog
   - atlassian/jira_search
   - atlassian/jira_search_fields
-  - github/create_repository
   - github/get_commit
   - github/get_file_contents
   - github/get_label

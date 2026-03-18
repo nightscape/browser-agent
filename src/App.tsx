@@ -8,6 +8,7 @@ import {
   useChatRuntime,
   AssistantChatTransport,
 } from "@assistant-ui/react-ai-sdk";
+import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "./components/Thread";
 import { ThreadList } from "./components/ThreadList";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -22,6 +23,7 @@ import {
 import { createIndexedDBThreadListAdapter } from "./storage/adapters";
 import type { SkillDefinition } from "../shared/skills";
 import { listUserSkills, saveUserSkill } from "./storage/skills";
+import { useMcpTools } from "./use-mcp-tools";
 
 export interface AgentInfo {
   name: string;
@@ -54,16 +56,19 @@ function ChatRuntime({ settings }: { settings: Settings }) {
         "X-LLM-Model": settings.model,
         "X-LLM-API-Key": settings.apiKey,
         ...(settings.baseUrl ? { "X-LLM-Base-URL": settings.baseUrl } : {}),
-        ...(Object.keys(settings.mcpServers).length > 0
-          ? { "X-MCP-Servers": JSON.stringify(settings.mcpServers) }
-          : {}),
         ...(settings.activeAgent ? { "X-Agent": settings.activeAgent } : {}),
         ...(Object.keys(settings.templateVars).length > 0
           ? { "X-Template-Vars": JSON.stringify(settings.templateVars) }
           : {}),
       }),
     }),
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
+}
+
+function McpToolsBridge({ settings }: { settings: Settings }) {
+  useMcpTools(settings.mcpServers, settings);
+  return null;
 }
 
 function SkillMessageBridge({ sendRef }: { sendRef: React.MutableRefObject<((text: string) => void) | null> }) {
@@ -116,6 +121,7 @@ function AppInner({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <McpToolsBridge settings={settings} />
       <SkillMessageBridge sendRef={sendRef} />
       <div className="grid h-dvh grid-cols-[260px_1fr]">
         <ThreadList

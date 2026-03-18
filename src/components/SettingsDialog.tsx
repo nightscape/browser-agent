@@ -326,6 +326,42 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
 
         <hr className="my-4 border-neutral-800" />
 
+        {/* ── Summary model (for large tool results) ──────────────── */}
+        <h3 className="mb-2 text-sm font-semibold text-neutral-200">
+          Summary Model
+        </h3>
+        <p className="mb-2 text-xs text-neutral-500">
+          Used to summarize large MCP tool results. Defaults to the main model if not set.
+        </p>
+        <div className="flex gap-2 mb-2">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-xs text-neutral-400">Provider</span>
+            <input
+              type="text"
+              placeholder={draft.provider}
+              value={draft.summaryProvider ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, summaryProvider: e.target.value || undefined })
+              }
+              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-xs text-neutral-400">Model</span>
+            <input
+              type="text"
+              placeholder={draft.model}
+              value={draft.summaryModel ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, summaryModel: e.target.value || undefined })
+              }
+              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+            />
+          </label>
+        </div>
+
+        <hr className="my-4 border-neutral-800" />
+
         {/* ── MCP Servers ─────────────────────────────────────────── */}
         <h3 className="mb-2 text-sm font-semibold text-neutral-200">
           MCP Servers
