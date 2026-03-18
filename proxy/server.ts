@@ -60,6 +60,58 @@ app.get("/api/skills/:name", async (c) => {
 // ── Env-based config (providers, models, default agent) ─────────────────
 app.get("/api/config", (c) => c.json(loadEnvConfig()));
 
+// ── Widget bundle (served for bookmarklets / userscripts) ────────────────
+app.get("/sensai-widget.iife.js", async (c) => {
+  const { readFile } = await import("node:fs/promises");
+  const { join, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const file = await readFile(join(root, "dist-widget", "sensai-widget.iife.js"), "utf-8");
+  c.header("Content-Type", "application/javascript");
+  c.header("Access-Control-Allow-Origin", "*");
+  return c.body(file);
+});
+
+// ── Bookmarklet loader (human-readable, auto-inits) ──────────────────────
+app.get("/bookmarklet", (c) => {
+  const origin = new URL(c.req.url).origin;
+  const code = `javascript:void((function(){var s=document.createElement('script');s.src='${origin}/sensai-widget.iife.js';s.onload=function(){SensAI.init({serverUrl:'${origin}'})};document.head.appendChild(s)})())`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>SensAI Bookmarklet</title>
+<style>body{font-family:system-ui;max-width:600px;margin:40px auto;color:#e5e5e5;background:#171717}
+a{display:inline-block;margin:20px 0;padding:12px 24px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;font-weight:600}
+code{background:#262626;padding:2px 6px;border-radius:4px;font-size:13px}</style></head>
+<body><h1>SensAI Bookmarklet</h1>
+<p>Drag this link to your bookmarks bar:</p>
+<a href="${code}">SensAI</a>
+<p>Or install the <a href="/sensai.user.js">userscript</a> in Tampermonkey/Greasemonkey.</p>
+<p>Keyboard shortcut: <code>Ctrl+Shift+.</code> (or <code>Cmd+Shift+.</code>)</p>
+</body></html>`;
+  return c.html(html);
+});
+
+// ── Userscript (dynamically generated with correct server URL) ───────────
+app.get("/sensai.user.js", (c) => {
+  const origin = new URL(c.req.url).origin;
+  const script = `// ==UserScript==
+// @name         SensAI Widget
+// @namespace    https://sensai.dev
+// @version      0.1.0
+// @description  Inject SensAI chat assistant into any page
+// @match        *://*/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+(function(){
+  "use strict";
+  var s=document.createElement("script");
+  s.src="${origin}/sensai-widget.iife.js";
+  s.onload=function(){window.SensAI.init({serverUrl:"${origin}"})};
+  document.head.appendChild(s);
+})();`;
+  c.header("Content-Type", "application/javascript");
+  return c.body(script);
+});
+
 // ── Predefined MCP servers (so frontend can display them) ───────────────
 app.get("/api/mcp-servers/predefined", async (c) => {
   return c.json(await loadPredefinedMcpServerUrls());
