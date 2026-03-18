@@ -10,6 +10,8 @@ export interface Settings {
   model: string;
   apiKey: string;
   baseUrl?: string;
+  summaryProvider?: string;
+  summaryModel?: string;
   mcpServers: Record<string, McpServerEntry>;
   activeAgent?: string;
   templateVars: Record<string, string>;

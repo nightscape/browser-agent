@@ -9,22 +9,19 @@ import { cors } from "hono/cors";
 import {
   streamText,
   convertToModelMessages,
-  stepCountIs,
+  tool as aiTool,
+  jsonSchema,
   type UIMessage,
   type ToolSet,
 } from "ai";
 import { resolveModel } from "./providers.js";
-import { getMcpTools } from "./mcp-tools.js";
 import { getSystemPrompt, renderTemplate } from "./system-prompt.js";
 import { copilotAuthRoutes } from "./copilot-auth.js";
 import { listAgents, loadAgent } from "./agents.js";
 import { listSkills, loadSkill } from "./skills.js";
-import {
-  loadPredefinedMcpServerUrls,
-  buildMergedServers,
-  type McpServerEntry,
-} from "./predefined-mcp-servers.js";
+import { loadPredefinedMcpServerUrls } from "./predefined-mcp-servers.js";
 import { loadEnvConfig } from "./env-config.js";
+import { loadContextWindows } from "./context-windows.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -68,30 +65,104 @@ app.get("/api/mcp-servers/predefined", async (c) => {
   return c.json(await loadPredefinedMcpServerUrls());
 });
 
+// ── Mock MCP server (for testing large tool results) ─────────────────────
+if (isDev) {
+  app.post("/api/mock-mcp", async (c) => {
+    const body = await c.req.json();
+    const { method, id } = body;
+
+    if (method === "initialize") {
+      return c.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: "2025-06-18",
+          capabilities: { tools: {} },
+          serverInfo: { name: "mock-mcp", version: "0.1.0" },
+        },
+      });
+    }
+
+    if (method === "notifications/initialized") {
+      return new Response(null, { status: 204 });
+    }
+
+    if (method === "tools/list") {
+      return c.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          tools: [
+            {
+              name: "generate_large_text",
+              description:
+                "Generates a large text response for testing. Set 'chars' to control size (default 50000).",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  chars: { type: "number", description: "Number of characters to generate" },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    if (method === "tools/call") {
+      const chars = (body.params?.arguments?.chars as number) ?? 50_000;
+      // Generate structured JSON data to test schema inference too
+      const items = [];
+      for (let i = 0; i < Math.ceil(chars / 200); i++) {
+        items.push({
+          id: i,
+          name: `Item ${i}`,
+          description: `This is a detailed description for item number ${i} with some padding text to reach the desired size.`,
+          active: i % 3 !== 0,
+          category: ["alpha", "beta", "gamma"][i % 3],
+          score: Math.round(Math.random() * 100),
+        });
+      }
+      const result = JSON.stringify(items);
+      return c.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: result.slice(0, chars) }],
+        },
+      });
+    }
+
+    return c.json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } });
+  });
+}
+
+// ── Context window sizes (for client-side token budget decisions) ────────
+app.get("/api/context-windows", async (c) => {
+  return c.json(await loadContextWindows());
+});
+
 // ── AI Chat endpoint ────────────────────────────────────────────────────
 app.post("/api/chat", async (c) => {
-  const { messages }: { messages: UIMessage[] } = await c.req.json();
+  const {
+    messages,
+    tools: clientTools,
+  }: {
+    messages: UIMessage[];
+    tools?: Record<string, { description?: string; parameters: unknown }>;
+  } = await c.req.json();
   const model = await resolveModel(c);
 
-  // Merge predefined URLs + client MCP servers (client wins on name conflict)
-  const clientServersJson = c.req.header("X-MCP-Servers");
-  const clientServers: Record<string, McpServerEntry> = clientServersJson
-    ? JSON.parse(clientServersJson)
-    : {};
-  const mergedServers = await buildMergedServers(clientServers);
-
-  // Only include servers that have a token (user-provided auth)
-  const authedServers: Record<string, McpServerEntry> = {};
-  for (const [name, entry] of Object.entries(mergedServers)) {
-    if (entry.token) authedServers[name] = entry;
+  // Build ToolSet from client-sent tool schemas (no execute — browser handles execution)
+  const tools: ToolSet = {};
+  if (clientTools) {
+    for (const [name, def] of Object.entries(clientTools)) {
+      tools[name] = aiTool({
+        description: def.description,
+        inputSchema: jsonSchema(def.parameters as Parameters<typeof jsonSchema>[0]),
+      });
+    }
   }
-
-  const mergedJson =
-    Object.keys(authedServers).length > 0
-      ? JSON.stringify(authedServers)
-      : undefined;
-
-  let tools: ToolSet = await getMcpTools(mergedJson);
 
   // Merge env-defined template vars with client-provided ones (client wins)
   const envVars = loadEnvConfig().templateVars;
@@ -106,18 +177,11 @@ app.post("/api/chat", async (c) => {
   const agentName = c.req.header("X-Agent");
 
   if (agentName) {
-    const agent = await loadAgent(agentName);
-    systemPrompt = renderTemplate(agent.systemPrompt, templateVars);
-
-    if (agent.tools.length > 0) {
-      const allowedSet = new Set(
-        agent.tools.map((t) => t.replace("/", "__")),
-      );
-      const filtered: ToolSet = {};
-      for (const [name, tool] of Object.entries(tools)) {
-        if (allowedSet.has(name)) filtered[name] = tool;
-      }
-      tools = filtered;
+    try {
+      const agent = await loadAgent(agentName);
+      systemPrompt = renderTemplate(agent.systemPrompt, templateVars);
+    } catch {
+      // Agent not found — fall back to default system prompt
     }
   }
 
@@ -128,7 +192,6 @@ app.post("/api/chat", async (c) => {
     system: systemPrompt,
     messages: modelMessages,
     tools,
-    stopWhen: stepCountIs(20),
   });
 
   return result.toUIMessageStreamResponse();

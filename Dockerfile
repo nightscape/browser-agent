@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json vite.config.ts index.html ./
 COPY shared/ shared/
+COPY vendor/ vendor/
 COPY src/ src/
 COPY proxy/ proxy/
 RUN npm run build

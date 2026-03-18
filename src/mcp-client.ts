@@ -1,4 +1,4 @@
-interface McpTool {
+interface McpToolSchema {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -11,27 +11,31 @@ interface RpcResponse {
   error?: { code: number; message: string };
 }
 
-export class McpClient {
+/**
+ * Browser-side MCP client that communicates through the /mcp/:serverName CORS proxy.
+ */
+export class BrowserMcpClient {
   private sessionId: string | null = null;
 
   constructor(
-    private url: string,
-    private headers: Record<string, string>,
+    private serverName: string,
+    private targetUrl: string,
+    private token: string,
   ) {}
 
   async initialize(): Promise<void> {
     const { headers } = await this.rpc("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "sensai-proxy", version: "0.1.0" },
+      clientInfo: { name: "sensai-browser", version: "0.1.0" },
     });
     this.sessionId = headers.get("mcp-session-id");
     await this.notify("notifications/initialized");
   }
 
-  async listTools(): Promise<McpTool[]> {
+  async listTools(): Promise<McpToolSchema[]> {
     const result = await this.rpc("tools/list", {});
-    return (result.body as { tools: McpTool[] }).tools;
+    return (result.body as { tools: McpToolSchema[] }).tools;
   }
 
   async callTool(
@@ -40,10 +44,6 @@ export class McpClient {
   ): Promise<unknown> {
     const result = await this.rpc("tools/call", { name, arguments: args });
     return result.body;
-  }
-
-  close(): void {
-    this.sessionId = null;
   }
 
   private async rpc(
@@ -79,18 +79,21 @@ export class McpClient {
   }
 
   private async send(payload: Record<string, unknown>): Promise<Response> {
-    const reqHeaders: Record<string, string> = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
-      ...this.headers,
+      "X-MCP-Target-URL": this.targetUrl,
     };
+    if (this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
     if (this.sessionId) {
-      reqHeaders["mcp-session-id"] = this.sessionId;
+      headers["mcp-session-id"] = this.sessionId;
     }
 
-    return fetch(this.url, {
+    return fetch(`/mcp/${this.serverName}`, {
       method: "POST",
-      headers: reqHeaders,
+      headers,
       body: JSON.stringify(payload),
     });
   }
