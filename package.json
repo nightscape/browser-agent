@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx proxy/server.ts",
-    "build": "tsc && vite build",
-    "build:widget": "vite build --config vite.config.widget.ts && vite build --config vite.config.iframe.ts",
+    "build": "tsc && vite build && npm run build:widget",
+    "build:widget": "vite build --config vite.config.widget.ts",
     "start": "NODE_ENV=production node --import tsx proxy/server.ts"
   },
   "devDependencies": {

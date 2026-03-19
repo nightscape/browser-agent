@@ -3,11 +3,7 @@ FROM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json vite.config.ts index.html ./
-COPY shared/ shared/
-COPY vendor/ vendor/
-COPY src/ src/
-COPY proxy/ proxy/
+COPY . .
 RUN npm run build
 
 FROM node:22-slim
@@ -19,6 +15,7 @@ COPY shared/ shared/
 COPY proxy/ proxy/
 
 COPY --from=build /app/dist/ dist/
+COPY --from=build /app/dist-widget/ dist-widget/
 
 ENV NODE_ENV=production
 ENV PORT=4222

@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-widget
 .git
 .jj
 .env

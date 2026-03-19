@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import type { Settings, McpServerEntry } from "../storage/settings";
-import type { AgentInfo, PredefinedMcpServer, EnvConfig } from "../App";
+import type { Settings } from "../storage/settings";
+import type { McpServerEntry, AgentInfo, PredefinedMcpServer, EnvConfig } from "../../shared/types";
 
 interface Props {
   settings: Settings;
