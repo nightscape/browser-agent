@@ -62,29 +62,49 @@ app.get("/api/config", (c) => c.json(loadEnvConfig()));
 
 // ── Widget bundle (served for bookmarklets / userscripts) ────────────────
 app.get("/sensai-widget.iife.js", async (c) => {
+  return serveWidgetFile(c, "sensai-widget.iife.js", "application/javascript");
+});
+
+// Widget iframe now loads the main React app via /?widget=1 — no separate HTML needed.
+
+async function serveWidgetFile(c: import("hono").Context, filePath: string, contentType: string) {
   const { readFile } = await import("node:fs/promises");
   const { join, dirname } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const file = await readFile(join(root, "dist-widget", "sensai-widget.iife.js"), "utf-8");
-  c.header("Content-Type", "application/javascript");
+  const file = await readFile(join(root, "dist-widget", filePath), "utf-8");
+  c.header("Content-Type", contentType);
   c.header("Access-Control-Allow-Origin", "*");
   return c.body(file);
-});
+}
 
-// ── Bookmarklet loader (human-readable, auto-inits) ──────────────────────
+// ── Bookmarklet loader ───────────────────────────────────────────────────
+// The bookmarklet is a tiny loader (~200 chars) that fetches the IIFE bundle
+// and evals it via fetch+Function. This avoids the ~5KB inline approach which
+// gets silently truncated by browsers (bookmarklet URL limit ~2000 chars).
 app.get("/bookmarklet", (c) => {
   const origin = new URL(c.req.url).origin;
-  const code = `javascript:void((function(){var s=document.createElement('script');s.src='${origin}/sensai-widget.iife.js';s.onload=function(){SensAI.init({serverUrl:'${origin}'})};document.head.appendChild(s)})())`;
+
+  // Loader: inject <script> tag that loads the IIFE bundle, then init.
+  const loader = `(function(){if(window.SensAI)return;`
+    + `var s=document.createElement('script');`
+    + `s.src='${origin}/sensai-widget.iife.js';`
+    + `s.onload=function(){window.SensAI.init({serverUrl:'${origin}'})};`
+    + `document.head.appendChild(s)`
+    + `})()`;
+
+  const code = `javascript:void(${encodeURIComponent(loader)})`;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>SensAI Bookmarklet</title>
 <style>body{font-family:system-ui;max-width:600px;margin:40px auto;color:#e5e5e5;background:#171717}
 a{display:inline-block;margin:20px 0;padding:12px 24px;background:#2563eb;color:white;border-radius:8px;text-decoration:none;font-weight:600}
-code{background:#262626;padding:2px 6px;border-radius:4px;font-size:13px}</style></head>
+code{background:#262626;padding:2px 6px;border-radius:4px;font-size:13px}
+p{line-height:1.6}</style></head>
 <body><h1>SensAI Bookmarklet</h1>
 <p>Drag this link to your bookmarks bar:</p>
 <a href="${code}">SensAI</a>
 <p>Or install the <a href="/sensai.user.js">userscript</a> in Tampermonkey/Greasemonkey.</p>
-<p>Keyboard shortcut: <code>Ctrl+Shift+.</code> (or <code>Cmd+Shift+.</code>)</p>
+<p>Keyboard shortcut (userscript only): <code>Ctrl+Shift+.</code> / <code>Cmd+Shift+.</code></p>
+<p>Click the bookmarklet on any page to inject the SensAI chat widget.</p>
 </body></html>`;
   return c.html(html);
 });
@@ -300,8 +320,11 @@ if (isDev) {
   const server = createHttpServer(async (req, res) => {
     const url = req.url ?? "/";
 
-    // API and MCP routes → Hono
-    if (url.startsWith("/api/") || url.startsWith("/mcp/") || url === "/health") {
+    // API, MCP, and widget routes → Hono
+    const honoRoutes = url.startsWith("/api/") || url.startsWith("/mcp/")
+      || url === "/health" || url === "/bookmarklet" || url === "/sensai.user.js"
+      || url === "/sensai-widget.iife.js";
+    if (honoRoutes) {
       const headers = new Headers();
       for (const [key, val] of Object.entries(req.headers)) {
         if (val) headers.set(key, Array.isArray(val) ? val.join(", ") : val);

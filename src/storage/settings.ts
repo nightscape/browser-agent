@@ -1,9 +1,7 @@
 import { openDB } from "./db";
+import type { McpServerEntry } from "../../shared/types";
 
-export interface McpServerEntry {
-  url: string;
-  token: string;
-}
+export type { McpServerEntry };
 
 export interface Settings {
   provider: string;

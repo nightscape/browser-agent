@@ -15,6 +15,9 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { ExportImportDialog } from "./components/ExportImportDialog";
 import { SkillVariableDialog } from "./components/SkillVariableDialog";
 import { SkillEditorDialog } from "./components/SkillEditorDialog";
+import { WidgetHeader } from "./components/WidgetHeader";
+import { PageContextBar } from "./components/PageContextBar";
+import { WidgetThreadDrawer } from "./components/WidgetThreadDrawer";
 import {
   loadSettings,
   saveSettings,
@@ -24,28 +27,11 @@ import { createIndexedDBThreadListAdapter } from "./storage/adapters";
 import type { SkillDefinition } from "../shared/skills";
 import { listUserSkills, saveUserSkill } from "./storage/skills";
 import { useMcpTools } from "./use-mcp-tools";
+import { useBrowserTools } from "./use-browser-tools";
+import { WidgetProvider, useWidgetMode } from "./widget-mode";
+import type { AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
 
-export interface AgentInfo {
-  name: string;
-  description: string;
-}
-
-export interface PredefinedMcpServer {
-  url: string;
-  tokenUrl?: string;
-}
-
-export interface ProviderConfig {
-  id: string;
-  label: string;
-  models: string[];
-}
-
-export interface EnvConfig {
-  defaultAgent?: string;
-  providers: ProviderConfig[];
-  templateVars: Record<string, string>;
-}
+export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
 function ChatRuntime({ settings }: { settings: Settings }) {
   return useChatRuntime({
@@ -71,6 +57,11 @@ function McpToolsBridge({ settings }: { settings: Settings }) {
   return null;
 }
 
+function BrowserToolsBridge() {
+  useBrowserTools();
+  return null;
+}
+
 function SkillMessageBridge({ sendRef }: { sendRef: React.MutableRefObject<((text: string) => void) | null> }) {
   const composer = useComposerRuntime();
   sendRef.current = useCallback(
@@ -88,14 +79,18 @@ function AppInner({
   skills,
   onActivateSkill,
   onNewSkill,
+  onOpenSettings,
   sendRef,
 }: {
   settings: Settings;
   skills: SkillDefinition[];
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
+  onOpenSettings: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
 }) {
+  const { isWidget } = useWidgetMode();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -122,23 +117,53 @@ function AppInner({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <McpToolsBridge settings={settings} />
+      <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
-      <div className="grid h-dvh grid-cols-[260px_1fr]">
-        <ThreadList
-          skills={skills}
-          onSkillClick={onActivateSkill}
-          onNewSkill={onNewSkill}
-        />
-        <Thread
-          skills={skills}
-          onActivateSkill={onActivateSkill}
-        />
-      </div>
+      {isWidget ? (
+        <div className="flex h-dvh flex-col">
+          <WidgetHeader
+            onToggleThreadList={() => setDrawerOpen((o) => !o)}
+            onOpenSettings={onOpenSettings}
+          />
+          <PageContextBar />
+          <div className="flex-1 overflow-hidden">
+            <Thread skills={skills} onActivateSkill={onActivateSkill} />
+          </div>
+          <WidgetThreadDrawer
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            skills={skills}
+            onSkillClick={onActivateSkill}
+            onNewSkill={onNewSkill}
+          />
+        </div>
+      ) : (
+        <div className="grid h-dvh grid-cols-[260px_1fr]">
+          <ThreadList
+            skills={skills}
+            onSkillClick={onActivateSkill}
+            onNewSkill={onNewSkill}
+          />
+          <Thread
+            skills={skills}
+            onActivateSkill={onActivateSkill}
+          />
+        </div>
+      )}
     </AssistantRuntimeProvider>
   );
 }
 
 export function App() {
+  return (
+    <WidgetProvider>
+      <AppRoot />
+    </WidgetProvider>
+  );
+}
+
+function AppRoot() {
+  const { isWidget } = useWidgetMode();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
@@ -254,45 +279,48 @@ export function App() {
   return (
     <>
       <div className="relative h-dvh">
-        <div className="absolute right-4 top-3 z-10 flex gap-1">
-        <button
-          onClick={() => setShowExportImport(true)}
-          className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
-          title="Export / Import"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className="h-5 w-5"
+        {!isWidget && (
+          <div className="absolute right-4 top-3 z-10 flex gap-1">
+          <button
+            onClick={() => setShowExportImport(true)}
+            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+            title="Export / Import"
           >
-            <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-            <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
-          title="Settings"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className="h-5 w-5"
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-5 w-5"
+            >
+              <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+              <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+            title="Settings"
           >
-            <path
-              fillRule="evenodd"
-              d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </button>
-        </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-5 w-5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+          </div>
+        )}
         <AppInner
           settings={settings}
           skills={skills}
           onActivateSkill={handleActivateSkill}
+          onOpenSettings={() => setShowSettings(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
         />
