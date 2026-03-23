@@ -25,6 +25,15 @@ import { loadContextWindows } from "./context-windows.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+/** Upgrade origin to HTTPS unless it's localhost (dev). */
+function httpsOrigin(url: string): string {
+  const u = new URL(url);
+  if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1" && u.protocol === "http:") {
+    u.protocol = "https:";
+  }
+  return u.origin;
+}
+
 const app = new Hono();
 
 const corsOrigin = process.env.CORS_ORIGIN ?? "*";
@@ -83,7 +92,7 @@ async function serveWidgetFile(c: import("hono").Context, filePath: string, cont
 // and evals it via fetch+Function. This avoids the ~5KB inline approach which
 // gets silently truncated by browsers (bookmarklet URL limit ~2000 chars).
 app.get("/bookmarklet", (c) => {
-  const origin = new URL(c.req.url).origin;
+  const origin = httpsOrigin(c.req.url);
 
   // Loader: inject <script> tag that loads the IIFE bundle, then init.
   const loader = `(function(){if(window.SensAI)return;`
@@ -111,7 +120,7 @@ p{line-height:1.6}</style></head>
 
 // ── Userscript (dynamically generated with correct server URL) ───────────
 app.get("/sensai.user.js", (c) => {
-  const origin = new URL(c.req.url).origin;
+  const origin = httpsOrigin(c.req.url);
   const script = `// ==UserScript==
 // @name         SensAI Widget
 // @namespace    https://sensai.dev
