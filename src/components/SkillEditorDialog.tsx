@@ -12,6 +12,7 @@ interface Props {
 
 export function SkillEditorDialog({ skill, agents, onSave, onClose }: Props) {
   const [name, setName] = useState(skill?.name ?? "");
+  const [category, setCategory] = useState(skill?.category ?? "");
   const [description, setDescription] = useState(skill?.description ?? "");
   const [agent, setAgent] = useState(skill?.agent ?? "");
   const [template, setTemplate] = useState(skill?.template ?? "");
@@ -22,6 +23,7 @@ export function SkillEditorDialog({ skill, agents, onSave, onClose }: Props) {
     e.preventDefault();
     onSave({
       name: name.replace(/\s+/g, "-").toLowerCase(),
+      category: category.trim() || undefined,
       description,
       agent: agent || undefined,
       variables: detectedVars,
@@ -51,6 +53,16 @@ export function SkillEditorDialog({ skill, agents, onSave, onClose }: Props) {
               required
               disabled={!!skill}
               className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500 disabled:opacity-50"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-neutral-400">Category (optional)</span>
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="e.g. jira, confluence"
+              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
             />
           </label>
 

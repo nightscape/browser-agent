@@ -61,8 +61,9 @@ app.get("/api/skills", async (c) => {
   return c.json(skills);
 });
 
-app.get("/api/skills/:name", async (c) => {
-  const skill = await loadSkill(c.req.param("name"));
+app.get("/api/skills/*", async (c) => {
+  const name = c.req.path.replace("/api/skills/", "");
+  const skill = await loadSkill(name);
   return c.json(skill);
 });
 

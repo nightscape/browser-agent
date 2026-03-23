@@ -10,11 +10,17 @@ export interface SkillVariable {
 
 export interface SkillDefinition {
   name: string;
+  category?: string;
   description: string;
   agent?: string;
   variables: SkillVariable[];
   template: string;
   source: "server" | "user";
+}
+
+export function displayName(skill: SkillDefinition): string {
+  const slash = skill.name.lastIndexOf("/");
+  return slash === -1 ? skill.name : skill.name.slice(slash + 1);
 }
 
 const VARIABLE_RE = /\{\{\s*(\w+)(?:\s*\|\s*(\w+)((?:\s+"[^"]*")*))?\s*\}\}/g;
