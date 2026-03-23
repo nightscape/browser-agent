@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { SkillDefinition } from "../../shared/skills";
-import { expandTemplate } from "../../shared/skills";
+import { expandTemplate, displayName } from "../../shared/skills";
 
 interface Props {
   skill: SkillDefinition;
@@ -33,7 +33,7 @@ export function SkillVariableDialog({ skill, templateVars, onSubmit, onCancel }:
         onSubmit={handleSubmit}
         className="w-full max-w-lg rounded-2xl border border-neutral-700 bg-neutral-900 p-6 shadow-xl"
       >
-        <h2 className="mb-1 text-lg font-semibold text-neutral-100">/{skill.name}</h2>
+        <h2 className="mb-1 text-lg font-semibold text-neutral-100">/{displayName(skill)}</h2>
         <p className="mb-5 text-sm text-neutral-400">{skill.description}</p>
 
         <div className="space-y-4">

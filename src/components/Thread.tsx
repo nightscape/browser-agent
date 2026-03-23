@@ -8,6 +8,7 @@ import {
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
 import type { SkillDefinition } from "../../shared/skills";
+import { displayName } from "../../shared/skills";
 
 interface ThreadProps {
   skills: SkillDefinition[];
@@ -131,7 +132,7 @@ function SkillAutocomplete({
               : "hover:bg-neutral-800"
           }`}
         >
-          <span className="text-sm text-neutral-200">/{skill.name}</span>
+          <span className="text-sm text-neutral-200">/{displayName(skill)}</span>
           <span className="truncate text-xs text-neutral-500">{skill.description}</span>
         </button>
       ))}

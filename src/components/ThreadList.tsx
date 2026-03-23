@@ -1,8 +1,10 @@
+import { useState } from "react";
 import {
   ThreadListPrimitive,
   ThreadListItemPrimitive,
 } from "@assistant-ui/react";
 import type { SkillDefinition } from "../../shared/skills";
+import { displayName } from "../../shared/skills";
 
 interface Props {
   skills: SkillDefinition[];
@@ -28,7 +30,58 @@ const ThreadListItem = () => (
   </ThreadListItemPrimitive.Root>
 );
 
+function groupByCategory(skills: SkillDefinition[]): Map<string, SkillDefinition[]> {
+  const groups = new Map<string, SkillDefinition[]>();
+  for (const skill of skills) {
+    const key = skill.category ?? "";
+    const list = groups.get(key) ?? [];
+    list.push(skill);
+    groups.set(key, list);
+  }
+  return groups;
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+    </svg>
+  );
+}
+
+function SkillButton({ skill, onClick }: { skill: SkillDefinition; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-neutral-800"
+    >
+      <span className="text-sm text-neutral-300">/{displayName(skill)}</span>
+      <span className="truncate text-xs text-neutral-500">{skill.description}</span>
+    </button>
+  );
+}
+
 export function ThreadList({ skills, onSkillClick, onNewSkill }: Props) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggleCategory = (category: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
+
+  const grouped = groupByCategory(skills);
+  const uncategorized = grouped.get("") ?? [];
+  const categories = [...grouped.keys()].filter((k) => k !== "").sort();
+
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col border-r border-neutral-800 bg-neutral-950">
       <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
@@ -63,16 +116,31 @@ export function ThreadList({ skills, onSkillClick, onNewSkill }: Props) {
                 </svg>
               </button>
             </div>
-            {skills.map((skill) => (
-              <button
-                key={skill.name}
-                onClick={() => onSkillClick(skill.name)}
-                className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-neutral-800"
-              >
-                <span className="text-sm text-neutral-300">/{skill.name}</span>
-                <span className="truncate text-xs text-neutral-500">{skill.description}</span>
-              </button>
+
+            {uncategorized.map((skill) => (
+              <SkillButton key={skill.name} skill={skill} onClick={() => onSkillClick(skill.name)} />
             ))}
+
+            {categories.map((category) => {
+              const open = !collapsed.has(category);
+              const categorySkills = grouped.get(category)!;
+              return (
+                <div key={category} className="mt-1">
+                  <button
+                    onClick={() => toggleCategory(category)}
+                    className="flex w-full items-center gap-1.5 rounded-lg px-3 py-1.5 text-left text-xs font-medium text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300"
+                  >
+                    <ChevronIcon open={open} />
+                    {category}
+                  </button>
+                  {open && categorySkills.map((skill) => (
+                    <div key={skill.name} className="pl-3">
+                      <SkillButton skill={skill} onClick={() => onSkillClick(skill.name)} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
