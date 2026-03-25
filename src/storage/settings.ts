@@ -3,6 +3,8 @@ import type { McpServerEntry } from "../../shared/types";
 
 export type { McpServerEntry };
 
+export type Theme = "dark" | "light";
+
 export interface Settings {
   provider: string;
   model: string;
@@ -13,6 +15,8 @@ export interface Settings {
   mcpServers: Record<string, McpServerEntry>;
   activeAgent?: string;
   templateVars: Record<string, string>;
+  theme: Theme;
+  temperature?: number;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -21,6 +25,7 @@ const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
   mcpServers: {},
   templateVars: {},
+  theme: "dark",
 };
 
 export async function loadSettings(): Promise<Settings> {
@@ -31,6 +36,7 @@ export async function loadSettings(): Promise<Settings> {
     req.onsuccess = () => {
       const stored = req.result ?? { ...DEFAULT_SETTINGS };
       if (!stored.templateVars) stored.templateVars = {};
+      if (!stored.theme) stored.theme = "dark";
       resolve(stored);
     };
   });
