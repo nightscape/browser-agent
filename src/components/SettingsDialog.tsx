@@ -30,6 +30,24 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
   const isCopilot = draft.provider === "copilot";
   const hasCopilotToken = isCopilot && !!draft.apiKey;
 
+  // Live-preview theme changes
+  useEffect(() => {
+    const root = document.documentElement;
+    if (draft.theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    return () => {
+      // Revert on unmount if not saved
+      if (settings.theme === "dark") {
+        root.classList.add("dark");
+      } else {
+        root.classList.remove("dark");
+      }
+    };
+  }, [draft.theme]);
+
   useEffect(() => {
     if (!hasCopilotToken) {
       setCopilotModels([]);
@@ -135,6 +153,30 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           Settings
         </h2>
 
+        {/* ── Theme toggle ───────────────────────────────────────── */}
+        <div className="mb-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-neutral-400">Theme</span>
+            <div className="flex gap-2">
+              {(["dark", "light"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setDraft({ ...draft, theme: t })}
+                  className={`rounded-lg px-3 py-1.5 text-sm capitalize ${
+                    draft.theme === t
+                      ? "bg-blue-600 text-white"
+                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </label>
+        </div>
+
+        <hr className="my-4 border-neutral-800" />
+
         {/* ── Agent selector ──────────────────────────────────────── */}
         {agents.length > 0 && (
           <div className="mb-4">
@@ -159,7 +201,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
               </select>
             </label>
             {draft.activeAgent && (
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-neutral-400">
                 {agents.find((a) => a.name === draft.activeAgent)?.description}
               </p>
             )}
@@ -261,12 +303,31 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
             return field("Model", "model");
           })()}
 
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-neutral-400">
+              Temperature: {draft.temperature ?? 1}
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              value={draft.temperature ?? 1}
+              onChange={(e) => setDraft({ ...draft, temperature: parseFloat(e.target.value) })}
+              className="w-full accent-blue-600"
+            />
+            <div className="flex justify-between text-[10px] text-neutral-400">
+              <span>Precise</span>
+              <span>Creative</span>
+            </div>
+          </label>
+
           {isCopilot ? (
             <div className="flex flex-col gap-2">
               <span className="text-xs text-neutral-400">GitHub Authentication</span>
               {hasCopilotToken ? (
                 <div className="flex items-center gap-2">
-                  <span className="rounded-lg border border-green-800 bg-green-900/30 px-3 py-2 text-sm text-green-400">
+                  <span className="rounded-lg border border-green-300 dark:border-green-800 bg-green-100/30 dark:bg-green-900/30 px-3 py-2 text-sm text-green-700 dark:text-green-400">
                     Authenticated
                   </span>
                   <button
@@ -280,7 +341,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                 <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-3">
                   <p className="mb-2 text-sm text-neutral-300">
                     Enter code{" "}
-                    <code className="rounded bg-neutral-700 px-1.5 py-0.5 font-mono text-blue-400">
+                    <code className="rounded bg-neutral-700 px-1.5 py-0.5 font-mono text-blue-600 dark:text-blue-400">
                       {copilotAuth.userCode}
                     </code>{" "}
                     at:
@@ -289,7 +350,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                     href={copilotAuth.verificationUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-blue-400 underline"
+                    className="text-sm text-blue-600 dark:text-blue-400 underline"
                   >
                     {copilotAuth.verificationUri}
                   </a>
@@ -299,7 +360,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                 </div>
               ) : copilotAuth.step === "error" ? (
                 <div className="flex flex-col gap-2">
-                  <span className="text-sm text-red-400">{copilotAuth.message}</span>
+                  <span className="text-sm text-red-600 dark:text-red-400">{copilotAuth.message}</span>
                   <button
                     onClick={startCopilotAuth}
                     className="w-fit rounded-lg bg-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-600"
@@ -330,7 +391,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
         <h3 className="mb-2 text-sm font-semibold text-neutral-200">
           Summary Model
         </h3>
-        <p className="mb-2 text-xs text-neutral-500">
+        <p className="mb-2 text-xs text-neutral-400">
           Used to summarize large MCP tool results. Defaults to the main model if not set.
         </p>
         <div className="flex gap-2 mb-2">
@@ -378,9 +439,9 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
               <div className="flex items-center gap-2">
                 <span className="text-neutral-400">
                   {name}{" "}
-                  <span className="text-neutral-600">— {config.url}</span>
+                  <span className="text-neutral-500">— {config.url}</span>
                 </span>
-                <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-500">
+                <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
                   server
                 </span>
               </div>
@@ -412,7 +473,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                     href={config.tokenUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 text-xs text-blue-400 hover:text-blue-300"
+                    className="shrink-0 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-300"
                   >
                     Get token
                   </a>
@@ -436,7 +497,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
             </span>
             <button
               onClick={() => removeMcpServer(name)}
-              className="text-neutral-500 hover:text-red-400"
+              className="text-neutral-500 hover:text-red-600 dark:text-red-400"
             >
               Remove
             </button>
@@ -477,7 +538,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
         <h3 className="mb-1 text-sm font-semibold text-neutral-200">
           Prompt Variables
         </h3>
-        <p className="mb-2 text-xs text-neutral-500">
+        <p className="mb-2 text-xs text-neutral-400">
           Use <code className="text-neutral-400">{"{{varName}}"}</code> in agent
           prompts.{" "}
           <code className="text-neutral-400">{"{{#if varName}}...{{/if}}"}</code>{" "}
@@ -497,7 +558,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                 </span>
               )}
             </span>
-            <span className="text-neutral-600">=</span>
+            <span className="text-neutral-400">=</span>
             <input
               value={value}
               onChange={(e) =>
@@ -514,7 +575,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                 delete vars[name];
                 setDraft({ ...draft, templateVars: vars });
               }}
-              className="text-neutral-500 hover:text-red-400"
+              className="text-neutral-500 hover:text-red-600 dark:text-red-400"
             >
               Remove
             </button>

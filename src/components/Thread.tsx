@@ -58,7 +58,7 @@ const ToolFallback: ToolCallMessagePartComponent = ({
         {isRunning ? (
           <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-500 border-t-blue-400" />
         ) : (
-          <span className="text-green-400 text-xs">&#10003;</span>
+          <span className="text-green-600 dark:text-green-400 text-xs">&#10003;</span>
         )}
         <span className="font-mono text-neutral-300">{toolName}</span>
         <span className="ml-auto text-neutral-500 text-xs">
@@ -68,14 +68,14 @@ const ToolFallback: ToolCallMessagePartComponent = ({
       {expanded && (
         <div className="border-t border-neutral-700 px-3 py-2 space-y-2">
           <div>
-            <p className="text-xs text-neutral-500 mb-1">Arguments</p>
+            <p className="text-xs text-neutral-400 mb-1">Arguments</p>
             <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400">
               {argsText}
             </pre>
           </div>
           {result !== undefined && (
             <div>
-              <p className="text-xs text-neutral-500 mb-1">Result</p>
+              <p className="text-xs text-neutral-400 mb-1">Result</p>
               <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400 max-h-64 overflow-y-auto">
                 {typeof result === "string"
                   ? result
@@ -91,7 +91,7 @@ const ToolFallback: ToolCallMessagePartComponent = ({
 
 const AssistantMessage = () => (
   <MessagePrimitive.Root className="mb-4">
-    <div className="max-w-[80%] rounded-2xl bg-neutral-800 px-4 py-2.5 text-neutral-100 prose prose-invert prose-sm max-w-none">
+    <div className="max-w-[80%] rounded-2xl bg-neutral-800 px-4 py-2.5 text-neutral-100 prose dark:prose-invert prose-sm max-w-none">
       <MessagePrimitive.Parts
         components={{
           Text: StreamdownText,
@@ -132,8 +132,13 @@ function SkillAutocomplete({
               : "hover:bg-neutral-800"
           }`}
         >
-          <span className="text-sm text-neutral-200">/{displayName(skill)}</span>
-          <span className="truncate text-xs text-neutral-500">{skill.description}</span>
+          <span className="flex items-center gap-1.5 text-sm text-neutral-200">
+            /{displayName(skill)}
+            {skill.source === "user" && (
+              <span className="rounded bg-blue-600/20 px-1 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">local</span>
+            )}
+          </span>
+          <span className="truncate text-xs text-neutral-400">{skill.description}</span>
         </button>
       ))}
     </div>

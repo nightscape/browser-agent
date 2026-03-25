@@ -22,6 +22,7 @@ import {
   loadSettings,
   saveSettings,
   type Settings,
+  type Theme,
 } from "./storage/settings";
 import { createIndexedDBThreadListAdapter } from "./storage/adapters";
 import type { SkillDefinition } from "../shared/skills";
@@ -178,10 +179,19 @@ function AppRoot() {
   const sendRef = useRef<((text: string) => void) | null>(null);
 
   useEffect(() => {
+    const root = document.documentElement;
+    if (settings?.theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }, [settings?.theme]);
+
+  useEffect(() => {
     Promise.all([
       loadSettings(),
       fetch("/api/config").then((r) => r.json()) as Promise<EnvConfig>,
-      fetch("/api/agents").then((r) => r.json()),
+      fetch("/api/agents").then((r) => r.json()) as Promise<AgentDefinition[]>,
       fetch("/api/mcp-servers/predefined").then((r) => r.json()),
       fetch("/api/skills").then((r) => r.json()) as Promise<{ name: string; description: string }[]>,
       listUserSkills(),

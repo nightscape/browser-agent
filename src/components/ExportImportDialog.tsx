@@ -171,7 +171,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
             />
 
             {importError && (
-              <p className="text-sm text-red-400">{importError}</p>
+              <p className="text-sm text-red-600 dark:text-red-400">{importError}</p>
             )}
 
             {importPreview && (
@@ -201,7 +201,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
             )}
 
             {importDone && (
-              <p className="text-sm text-green-400">
+              <p className="text-sm text-green-600 dark:text-green-400">
                 Import complete. Reload the page to see imported conversations.
               </p>
             )}

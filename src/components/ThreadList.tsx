@@ -60,8 +60,13 @@ function SkillButton({ skill, onClick }: { skill: SkillDefinition; onClick: () =
       onClick={onClick}
       className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-neutral-800"
     >
-      <span className="text-sm text-neutral-300">/{displayName(skill)}</span>
-      <span className="truncate text-xs text-neutral-500">{skill.description}</span>
+      <span className="flex items-center gap-1.5 text-sm text-neutral-300">
+        /{displayName(skill)}
+        {skill.source === "user" && (
+          <span className="rounded bg-blue-600/20 px-1 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">local</span>
+        )}
+      </span>
+      <span className="truncate text-xs text-neutral-400">{skill.description}</span>
     </button>
   );
 }
@@ -105,7 +110,7 @@ export function ThreadList({ skills, onSkillClick, onNewSkill }: Props) {
         {skills.length > 0 && (
           <div className="mt-4 border-t border-neutral-800 pt-3">
             <div className="flex items-center justify-between px-3 pb-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-neutral-500">Skills</span>
+              <span className="text-xs font-medium uppercase tracking-wider text-neutral-400">Skills</span>
               <button
                 onClick={onNewSkill}
                 className="rounded p-0.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
