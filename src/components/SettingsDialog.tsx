@@ -435,7 +435,9 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
 
         {/* Predefined (server-side) servers — user provides token */}
         {Object.entries(predefinedMcpServers).map(([name, config]) => {
-          const token = draft.mcpServers[name]?.token ?? "";
+          const entry = draft.mcpServers[name];
+          const token = entry?.token ?? "";
+          const toolFilter = entry?.toolFilter ?? config.toolFilter ?? [];
           return (
             <div
               key={`pre-${name}`}
@@ -462,7 +464,11 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                         ...draft,
                         mcpServers: {
                           ...draft.mcpServers,
-                          [name]: { url: config.url, token: val },
+                          [name]: {
+                            url: config.url,
+                            token: val,
+                            toolFilter: draft.mcpServers[name]?.toolFilter ?? config.toolFilter,
+                          },
                         },
                       });
                     } else {
@@ -484,6 +490,30 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                   </a>
                 )}
               </div>
+              <div className="mt-1.5">
+                <input
+                  placeholder="Tool filter (comma-separated regexes, e.g. jira_.*, get_issue)"
+                  value={toolFilter.join(", ")}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const filters = raw
+                      ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+                      : [];
+                    setDraft({
+                      ...draft,
+                      mcpServers: {
+                        ...draft.mcpServers,
+                        [name]: {
+                          url: config.url,
+                          token,
+                          toolFilter: filters.length > 0 ? filters : undefined,
+                        },
+                      },
+                    });
+                  }}
+                  className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-blue-500"
+                />
+              </div>
             </div>
           );
         })}
@@ -494,18 +524,43 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           .map(([name, config]) => (
           <div
             key={name}
-            className="mb-2 flex items-center justify-between rounded-lg bg-neutral-800 px-3 py-2 text-sm"
+            className="mb-2 rounded-lg bg-neutral-800 px-3 py-2 text-sm"
           >
-            <span className="text-neutral-300">
-              {name}{" "}
-              <span className="text-neutral-500">— {config.url}</span>
-            </span>
-            <button
-              onClick={() => removeMcpServer(name)}
-              className="text-neutral-500 hover:text-red-600 dark:text-red-400"
-            >
-              Remove
-            </button>
+            <div className="flex items-center justify-between">
+              <span className="text-neutral-300">
+                {name}{" "}
+                <span className="text-neutral-500">— {config.url}</span>
+              </span>
+              <button
+                onClick={() => removeMcpServer(name)}
+                className="text-neutral-500 hover:text-red-600 dark:text-red-400"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="mt-1.5">
+              <input
+                placeholder="Tool filter (comma-separated regexes, e.g. jira_.*, get_issue)"
+                value={(config.toolFilter ?? []).join(", ")}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const filters = raw
+                    ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+                    : [];
+                  setDraft({
+                    ...draft,
+                    mcpServers: {
+                      ...draft.mcpServers,
+                      [name]: {
+                        ...config,
+                        toolFilter: filters.length > 0 ? filters : undefined,
+                      },
+                    },
+                  });
+                }}
+                className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
         ))}
 
