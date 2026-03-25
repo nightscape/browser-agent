@@ -16,11 +16,13 @@ export interface EnvConfig {
 export interface PredefinedMcpServer {
   url: string;
   tokenUrl?: string;
+  toolFilter?: string[];
 }
 
 export interface McpServerEntry {
   url: string;
   token: string;
+  toolFilter?: string[];
 }
 
 export interface AgentInfo {

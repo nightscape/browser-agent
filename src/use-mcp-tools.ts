@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useAui } from "@assistant-ui/react";
 import { BrowserMcpClient } from "./mcp-client";
 import type { McpServerEntry, Settings } from "./storage/settings";
+import type { PredefinedMcpServer } from "../shared/types";
 import { shouldSummarize, estimateTokens } from "./token-budget";
 import {
   storeFullToolResult,
@@ -112,6 +113,7 @@ async function summarizeWithCheapModel(
 export function useMcpTools(
   mcpServers: Record<string, McpServerEntry>,
   settings: Settings,
+  predefinedMcpServers?: Record<string, PredefinedMcpServer>,
   agentTools?: string[],
 ) {
   const aui = useAui();
@@ -124,10 +126,13 @@ export function useMcpTools(
     () =>
       Object.entries(mcpServers)
         .filter(([, e]) => e.token)
-        .map(([name, e]) => `${name}:${e.url}:${e.token.slice(0, 8)}`)
+        .map(([name, e]) => {
+          const filter = e.toolFilter ?? predefinedMcpServers?.[name]?.toolFilter ?? [];
+          return `${name}:${e.url}:${e.token.slice(0, 8)}:${filter.join(",")}`;
+        })
         .sort()
         .join("|"),
-    [mcpServers],
+    [mcpServers, predefinedMcpServers],
   );
 
   const agentToolsKey = agentTools?.sort().join(",") ?? "";
@@ -162,7 +167,16 @@ export function useMcpTools(
           clientsByServer.set(serverName, client);
 
           const tools = await client.listTools();
+          const toolFilter = config.toolFilter ?? predefinedMcpServers?.[serverName]?.toolFilter;
+          const filterPatterns = toolFilter?.map(
+            (p) => new RegExp(`^${p}$`),
+          );
           for (const t of tools) {
+            if (
+              filterPatterns &&
+              !filterPatterns.some((re) => re.test(t.name))
+            )
+              continue;
             const qualifiedName = `${serverName}__${t.name}`;
             allTools[qualifiedName] = {
               serverName,

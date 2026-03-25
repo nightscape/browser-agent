@@ -65,8 +65,8 @@ function SystemPromptBridge({
   return null;
 }
 
-function McpToolsBridge({ settings }: { settings: Settings }) {
-  useMcpTools(settings.mcpServers, settings);
+function McpToolsBridge({ settings, predefinedMcpServers }: { settings: Settings; predefinedMcpServers: Record<string, PredefinedMcpServer> }) {
+  useMcpTools(settings.mcpServers, settings, predefinedMcpServers);
   return null;
 }
 
@@ -106,6 +106,7 @@ function AppInner({
   agents,
   defaultSystemPrompt,
   skills,
+  predefinedMcpServers,
   onActivateSkill,
   onNewSkill,
   onOpenSettings,
@@ -115,6 +116,7 @@ function AppInner({
   agents: AgentDefinition[];
   defaultSystemPrompt: string;
   skills: SkillDefinition[];
+  predefinedMcpServers: Record<string, PredefinedMcpServer>;
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
   onOpenSettings: () => void;
@@ -149,7 +151,7 @@ function AppInner({
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadFromUrl />
       <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} />
-      <McpToolsBridge settings={settings} />
+      <McpToolsBridge settings={settings} predefinedMcpServers={predefinedMcpServers} />
       <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
       {isWidget ? (
@@ -363,6 +365,7 @@ function AppRoot() {
           agents={agents}
           defaultSystemPrompt={envConfig?.defaultSystemPrompt ?? ""}
           skills={skills}
+          predefinedMcpServers={predefinedMcpServers}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}
           onNewSkill={() => setShowSkillEditor(true)}

@@ -9,6 +9,7 @@ export interface McpServerEntry {
 interface McpServerConfig {
   url: string;
   tokenUrl?: string;
+  toolFilter?: string[];
 }
 
 let cached: Record<string, McpServerConfig> | null = null;
@@ -43,9 +44,9 @@ async function loadRawConfig(): Promise<string | null> {
   }
 }
 
-/** Returns predefined server URLs for the frontend to display. */
+/** Returns predefined server config for the frontend to display. */
 export async function loadPredefinedMcpServerUrls(): Promise<
-  Record<string, { url: string }>
+  Record<string, McpServerConfig>
 > {
   return await loadConfig();
 }
