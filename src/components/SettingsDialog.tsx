@@ -245,9 +245,8 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           {(() => {
             const pc = envConfig.providers.find((p) => p.id === draft.provider);
             const configuredModels = pc?.models ?? [];
-            const copilotHasModels = copilotModels.length > 0;
 
-            if (copilotHasModels) {
+            if (isCopilot) {
               return (
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-neutral-400">Model</span>
@@ -256,14 +255,20 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                     onChange={(e) => setDraft({ ...draft, model: e.target.value })}
                     className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
                   >
-                    {!copilotModels.some((m) => m.id === draft.model) && (
-                      <option value={draft.model}>{draft.model}</option>
+                    {copilotModels.length === 0 ? (
+                      <option value={draft.model}>{draft.model}{hasCopilotToken ? " (loading...)" : ""}</option>
+                    ) : (
+                      <>
+                        {!copilotModels.some((m) => m.id === draft.model) && (
+                          <option value={draft.model}>{draft.model}</option>
+                        )}
+                        {copilotModels.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name ? `${m.name} (${m.id})` : m.id}
+                          </option>
+                        ))}
+                      </>
                     )}
-                    {copilotModels.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name ? `${m.name} (${m.id})` : m.id}
-                      </option>
-                    ))}
                   </select>
                 </label>
               );
