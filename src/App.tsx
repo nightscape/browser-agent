@@ -3,6 +3,7 @@ import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime,
   useComposerRuntime,
+  useAui,
 } from "@assistant-ui/react";
 import {
   useChatRuntime,
@@ -30,7 +31,8 @@ import { listUserSkills, saveUserSkill } from "./storage/skills";
 import { useMcpTools } from "./use-mcp-tools";
 import { useBrowserTools } from "./use-browser-tools";
 import { WidgetProvider, useWidgetMode } from "./widget-mode";
-import type { AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
+import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
+import { useSystemPrompt } from "./use-system-prompt";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -43,14 +45,24 @@ function ChatRuntime({ settings }: { settings: Settings }) {
         "X-LLM-Model": settings.model,
         "X-LLM-API-Key": settings.apiKey,
         ...(settings.baseUrl ? { "X-LLM-Base-URL": settings.baseUrl } : {}),
-        ...(settings.activeAgent ? { "X-Agent": settings.activeAgent } : {}),
-        ...(Object.keys(settings.templateVars).length > 0
-          ? { "X-Template-Vars": JSON.stringify(settings.templateVars) }
-          : {}),
+        ...(settings.temperature != null ? { "X-LLM-Temperature": String(settings.temperature) } : {}),
       }),
     }),
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
+}
+
+function SystemPromptBridge({
+  defaultSystemPrompt,
+  agents,
+  settings,
+}: {
+  defaultSystemPrompt: string;
+  agents: AgentDefinition[];
+  settings: Settings;
+}) {
+  useSystemPrompt(defaultSystemPrompt, agents, settings.activeAgent, settings.templateVars);
+  return null;
 }
 
 function McpToolsBridge({ settings }: { settings: Settings }) {
@@ -60,6 +72,20 @@ function McpToolsBridge({ settings }: { settings: Settings }) {
 
 function BrowserToolsBridge() {
   useBrowserTools();
+  return null;
+}
+
+function ThreadFromUrl() {
+  const aui = useAui();
+  useEffect(() => {
+    const threadId = new URLSearchParams(window.location.search).get("thread");
+    if (threadId) {
+      aui.threads().switchToThread(threadId);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("thread");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
   return null;
 }
 
@@ -77,6 +103,8 @@ function SkillMessageBridge({ sendRef }: { sendRef: React.MutableRefObject<((tex
 
 function AppInner({
   settings,
+  agents,
+  defaultSystemPrompt,
   skills,
   onActivateSkill,
   onNewSkill,
@@ -84,6 +112,8 @@ function AppInner({
   sendRef,
 }: {
   settings: Settings;
+  agents: AgentDefinition[];
+  defaultSystemPrompt: string;
   skills: SkillDefinition[];
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
@@ -117,6 +147,8 @@ function AppInner({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <ThreadFromUrl />
+      <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} />
       <McpToolsBridge settings={settings} />
       <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
@@ -168,7 +200,7 @@ function AppRoot() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [predefinedMcpServers, setPredefinedMcpServers] = useState<
     Record<string, PredefinedMcpServer>
   >({});
@@ -328,6 +360,8 @@ function AppRoot() {
         )}
         <AppInner
           settings={settings}
+          agents={agents}
+          defaultSystemPrompt={envConfig?.defaultSystemPrompt ?? ""}
           skills={skills}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}

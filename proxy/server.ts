@@ -15,7 +15,6 @@ import {
   type ToolSet,
 } from "ai";
 import { resolveModel } from "./providers.js";
-import { getSystemPrompt, renderTemplate } from "./system-prompt.js";
 import { copilotAuthRoutes } from "./copilot-auth.js";
 import { listAgents, loadAgent } from "./agents.js";
 import { listSkills, loadSkill } from "./skills.js";
@@ -46,7 +45,8 @@ app.route("/api/copilot/auth", copilotAuthRoutes);
 
 // ── Agents ──────────────────────────────────────────────────────────────
 app.get("/api/agents", async (c) => {
-  const agents = await listAgents();
+  const names = await listAgents();
+  const agents = await Promise.all(names.map((a) => loadAgent(a.name)));
   return c.json(agents);
 });
 
@@ -68,7 +68,7 @@ app.get("/api/skills/*", async (c) => {
 });
 
 // ── Env-based config (providers, models, default agent) ─────────────────
-app.get("/api/config", (c) => c.json(loadEnvConfig()));
+app.get("/api/config", async (c) => c.json(await loadEnvConfig()));
 
 // ── Widget bundle (served for bookmarklets / userscripts) ────────────────
 app.get("/sensai-widget.iife.js", async (c) => {
@@ -228,14 +228,17 @@ app.get("/api/context-windows", async (c) => {
 app.post("/api/chat", async (c) => {
   const {
     messages,
+    system,
     tools: clientTools,
   }: {
     messages: UIMessage[];
+    system?: string;
     tools?: Record<string, { description?: string; parameters: unknown }>;
   } = await c.req.json();
   const model = await resolveModel(c);
+  const temperatureHeader = c.req.header("X-LLM-Temperature");
+  const temperature = temperatureHeader != null ? parseFloat(temperatureHeader) : undefined;
 
-  // Build ToolSet from client-sent tool schemas (no execute — browser handles execution)
   const tools: ToolSet = {};
   if (clientTools) {
     for (const [name, def] of Object.entries(clientTools)) {
@@ -246,34 +249,14 @@ app.post("/api/chat", async (c) => {
     }
   }
 
-  // Merge env-defined template vars with client-provided ones (client wins)
-  const envVars = loadEnvConfig().templateVars;
-  const templateVarsJson = c.req.header("X-Template-Vars");
-  const clientVars: Record<string, string> = templateVarsJson
-    ? JSON.parse(templateVarsJson)
-    : {};
-  const templateVars: Record<string, string> = { ...envVars, ...clientVars };
-
-  // If an agent is selected, use its system prompt and filter tools
-  let systemPrompt = await getSystemPrompt(templateVars);
-  const agentName = c.req.header("X-Agent");
-
-  if (agentName) {
-    try {
-      const agent = await loadAgent(agentName);
-      systemPrompt = renderTemplate(agent.systemPrompt, templateVars);
-    } catch {
-      // Agent not found — fall back to default system prompt
-    }
-  }
-
   const modelMessages = await convertToModelMessages(messages);
 
   const result = streamText({
     model,
-    system: systemPrompt,
+    system,
     messages: modelMessages,
     tools,
+    temperature,
   });
 
   return result.toUIMessageStreamResponse();
