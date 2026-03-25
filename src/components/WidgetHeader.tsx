@@ -1,9 +1,22 @@
+import { useAui } from "@assistant-ui/react";
+
 interface Props {
   onToggleThreadList: () => void;
   onOpenSettings: () => void;
 }
 
 export function WidgetHeader({ onToggleThreadList, onOpenSettings }: Props) {
+  const aui = useAui();
+
+  function openInNewTab() {
+    const threadId = aui.threadListItem.source
+      ? aui.threadListItem().getState()?.remoteId
+      : null;
+    const url = new URL(window.location.origin);
+    if (threadId) url.searchParams.set("thread", threadId);
+    window.open(url.toString(), "_blank");
+  }
+
   return (
     <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-3 py-2">
       <button
@@ -18,7 +31,7 @@ export function WidgetHeader({ onToggleThreadList, onOpenSettings }: Props) {
       <span className="text-sm font-semibold text-neutral-200">SensAI</span>
       <div className="flex items-center gap-0.5">
         <button
-          onClick={() => window.open(window.location.origin, "_blank")}
+          onClick={openInNewTab}
           className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
           title="Open in new tab"
         >
