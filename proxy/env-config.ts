@@ -1,3 +1,8 @@
+import { readFile } from "node:fs/promises";
+import type { EnvConfig, ProviderConfig } from "../shared/types.js";
+
+export type { EnvConfig, ProviderConfig };
+
 const ALL_PROVIDERS: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
@@ -6,19 +11,26 @@ const ALL_PROVIDERS: Record<string, string> = {
   copilot: "GitHub Copilot",
 };
 
-export interface ProviderConfig {
-  id: string;
-  label: string;
-  models: string[];
-}
+const DEFAULT_PROMPT = `You are a helpful AI assistant for developers at Deutsche Börse Group (DBG).
 
-export interface EnvConfig {
-  defaultAgent?: string;
-  providers: ProviderConfig[];
-  templateVars: Record<string, string>;
-}
+You help developers with their daily work across internal tools like JIRA, Confluence, GitHub, Zeppelin, and XMDM GUI.
 
-export function loadEnvConfig(): EnvConfig {
+When the user asks a question:
+1. If it seems related to the page they're currently viewing, use the read-page-context tool to get the page content first.
+2. Use available MCP tools (Confluence, JIRA, GitHub) to search for relevant information.
+3. Provide concise, actionable answers with references to source documents.
+
+When answering:
+- Be specific and reference actual documents, tickets, or code when possible.
+- If you used tools to gather context, briefly mention what you found and where.
+- If you're unsure, say so rather than guessing.
+- Keep responses focused and developer-friendly.`;
+
+let cachedConfig: EnvConfig | null = null;
+
+export async function loadEnvConfig(): Promise<EnvConfig> {
+  if (cachedConfig) return cachedConfig;
+
   const defaultAgent = process.env.DEFAULT_AGENT || undefined;
 
   const providerIds = process.env.LLM_PROVIDERS
@@ -48,5 +60,12 @@ export function loadEnvConfig(): EnvConfig {
     }
   }
 
-  return { defaultAgent, providers, templateVars };
+  let defaultSystemPrompt = DEFAULT_PROMPT;
+  const filePath = process.env.SYSTEM_PROMPT_FILE;
+  if (filePath) {
+    defaultSystemPrompt = await readFile(filePath, "utf-8");
+  }
+
+  cachedConfig = { defaultAgent, defaultSystemPrompt, providers, templateVars };
+  return cachedConfig;
 }

@@ -1,13 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { parse as parseYaml } from "yaml";
-
-export interface AgentDefinition {
-  name: string;
-  description: string;
-  tools: string[];
-  systemPrompt: string;
-}
+import type { AgentDefinition } from "../shared/types.js";
 
 const AGENTS_DIR =
   process.env.AGENTS_DIR ??

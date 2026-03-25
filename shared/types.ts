@@ -8,6 +8,7 @@ export interface ProviderConfig {
 
 export interface EnvConfig {
   defaultAgent?: string;
+  defaultSystemPrompt: string;
   providers: ProviderConfig[];
   templateVars: Record<string, string>;
 }
@@ -25,6 +26,11 @@ export interface McpServerEntry {
 export interface AgentInfo {
   name: string;
   description: string;
+}
+
+export interface AgentDefinition extends AgentInfo {
+  tools: string[];
+  systemPrompt: string;
 }
 
 export interface ToolSchema {
