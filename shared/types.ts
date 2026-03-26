@@ -6,11 +6,18 @@ export interface ProviderConfig {
   models: string[];
 }
 
+export interface VariableDefinition {
+  type: "choice" | "multichoice";
+  label: string;
+  options: string[];
+}
+
 export interface EnvConfig {
   defaultAgent?: string;
   defaultSystemPrompt: string;
   providers: ProviderConfig[];
   templateVars: Record<string, string>;
+  variableDefinitions: Record<string, VariableDefinition>;
 }
 
 export interface PredefinedMcpServer {

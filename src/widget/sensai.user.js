@@ -4,17 +4,12 @@
 // @version      0.1.0
 // @description  Inject SensAI chat assistant into any page
 // @match        *://*/*
-// @grant        none
+// @require      __SENSAI_SERVER__/sensai-widget.iife.js
 // @run-at       document-idle
 // ==/UserScript==
 
-// CONFIGURE: Set this to your SensAI server URL.
-const SENSAI_SERVER = "http://localhost:4222";
+// __SENSAI_SERVER__ is replaced by the proxy when serving this file.
+// For manual install, replace it with your server URL (e.g. "https://localhost:4222").
+const SENSAI_SERVER = "__SENSAI_SERVER__";
 
-(function () {
-  "use strict";
-  const script = document.createElement("script");
-  script.src = `${SENSAI_SERVER}/sensai-widget.iife.js`;
-  script.onload = () => window.SensAI?.init({ serverUrl: SENSAI_SERVER });
-  document.head.appendChild(script);
-})();
+window.SensAI?.init({ serverUrl: SENSAI_SERVER });

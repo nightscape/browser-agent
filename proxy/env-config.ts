@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { EnvConfig, ProviderConfig } from "../shared/types.js";
+import type { EnvConfig, ProviderConfig, VariableDefinition } from "../shared/types.js";
 
 export type { EnvConfig, ProviderConfig };
 
@@ -66,6 +66,15 @@ export async function loadEnvConfig(): Promise<EnvConfig> {
     defaultSystemPrompt = await readFile(filePath, "utf-8");
   }
 
-  cachedConfig = { defaultAgent, defaultSystemPrompt, providers, templateVars };
+  let variableDefinitions: Record<string, VariableDefinition> = {};
+  const varDefsPath = process.env.VARIABLE_DEFINITIONS_FILE;
+  if (varDefsPath) {
+    const raw = await readFile(varDefsPath, "utf-8");
+    variableDefinitions = JSON.parse(raw);
+  } else if (process.env.VARIABLE_DEFINITIONS) {
+    variableDefinitions = JSON.parse(process.env.VARIABLE_DEFINITIONS);
+  }
+
+  cachedConfig = { defaultAgent, defaultSystemPrompt, providers, templateVars, variableDefinitions };
   return cachedConfig;
 }

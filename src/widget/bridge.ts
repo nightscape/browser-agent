@@ -33,7 +33,15 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
     transition: "transform 0.15s",
     padding: "0",
   });
-  fab.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:24px;height:24px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>`;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "currentColor");
+  svg.style.width = "24px";
+  svg.style.height = "24px";
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z");
+  svg.appendChild(path);
+  fab.appendChild(svg);
   fab.addEventListener("click", toggle);
   fab.addEventListener("mouseenter", () => (fab.style.transform = "scale(1.08)"));
   fab.addEventListener("mouseleave", () => (fab.style.transform = ""));
@@ -58,9 +66,30 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
   iframe.setAttribute("allow", "clipboard-write");
   document.body.appendChild(iframe);
 
+  // ── Popup fallback (when CSP blocks the iframe) ────────────────────────
+  let popup: Window | null = null;
+  let usePopup = false;
+  let iframeReady = false;
+  const widgetUrl = `${serverUrl}/?widget=1`;
+
+  // After first toggle, give the iframe a few seconds to send sensai:ready.
+  // If it doesn't (CSP blocked), switch to popup for subsequent toggles.
+  let cspCheckScheduled = false;
+  function scheduleCspCheck(): void {
+    if (cspCheckScheduled || usePopup || iframeReady) return;
+    cspCheckScheduled = true;
+    setTimeout(() => {
+      if (!iframeReady) {
+        switchToPopup();
+        popup = window.open(widgetUrl, "sensai", "width=400,height=560");
+      }
+    }, 1000);
+  }
+
   // ── PostMessage protocol ─────────────────────────────────────────────────
-  function sendToIframe(msg: Record<string, unknown>): void {
-    iframe.contentWindow!.postMessage(msg, "*");
+  function sendToTarget(msg: Record<string, unknown>): void {
+    const target = usePopup ? popup : iframe.contentWindow;
+    target?.postMessage(msg, "*");
   }
 
   function getPageContext() {
@@ -71,12 +100,20 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
     };
   }
 
+  // Switch to popup mode: remove the iframe, future toggles open a window
+  function switchToPopup(): void {
+    usePopup = true;
+    iframe.remove();
+  }
+
   function onMessage(e: MessageEvent): void {
-    if (e.source !== iframe.contentWindow) return;
+    const expectedSource = usePopup ? popup : iframe.contentWindow;
+    if (e.source !== expectedSource) return;
 
     switch (e.data?.type) {
       case "sensai:ready":
-        sendToIframe({ type: "sensai:init", context: getPageContext() });
+        iframeReady = true;
+        sendToTarget({ type: "sensai:init", context: getPageContext() });
         break;
 
       case "sensai:dom":
@@ -84,7 +121,7 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
         break;
 
       case "sensai:request-context":
-        sendToIframe({ type: "sensai:context", context: getPageContext() });
+        sendToTarget({ type: "sensai:context", context: getPageContext() });
         break;
     }
   }
@@ -227,15 +264,25 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
         result = `Unknown DOM method: ${method}`;
     }
 
-    sendToIframe({ type: "sensai:dom-result", requestId, result });
+    sendToTarget({ type: "sensai:dom-result", requestId, result });
   }
 
   // ── Toggle ───────────────────────────────────────────────────────────────
   function toggle(): void {
+    if (usePopup) {
+      if (popup && !popup.closed) {
+        popup.focus();
+      } else {
+        popup = window.open(widgetUrl, "sensai", "width=400,height=560");
+      }
+      sendToTarget({ type: "sensai:context", context: getPageContext() });
+      return;
+    }
     iframeVisible = !iframeVisible;
     iframe.style.display = iframeVisible ? "block" : "none";
     if (iframeVisible) {
-      sendToIframe({ type: "sensai:context", context: getPageContext() });
+      scheduleCspCheck();
+      sendToTarget({ type: "sensai:context", context: getPageContext() });
     }
   }
 
@@ -256,6 +303,7 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
     document.removeEventListener("keydown", onKeydown);
     fab.remove();
     iframe.remove();
+    if (popup && !popup.closed) popup.close();
   }
 
   return { destroy };

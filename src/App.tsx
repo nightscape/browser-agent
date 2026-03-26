@@ -27,6 +27,7 @@ import {
 } from "./storage/settings";
 import { createIndexedDBThreadListAdapter } from "./storage/adapters";
 import type { SkillDefinition } from "../shared/skills";
+import { collectGlobalVariables } from "../shared/skills";
 import { listUserSkills, saveUserSkill } from "./storage/skills";
 import { useMcpTools } from "./use-mcp-tools";
 import { useBrowserTools } from "./use-browser-tools";
@@ -211,6 +212,11 @@ function AppRoot() {
   const [pendingSkill, setPendingSkill] = useState<SkillDefinition | null>(null);
   const [showSkillEditor, setShowSkillEditor] = useState(false);
   const sendRef = useRef<((text: string) => void) | null>(null);
+
+  const globalVariables = useMemo(
+    () => collectGlobalVariables(skills, envConfig?.variableDefinitions ?? {}),
+    [skills, envConfig?.variableDefinitions],
+  );
 
   useEffect(() => {
     const root = document.documentElement;
@@ -410,6 +416,7 @@ function AppRoot() {
           agents={agents}
           predefinedMcpServers={predefinedMcpServers}
           envConfig={envConfig}
+          globalVariables={globalVariables}
           onSave={async (updated) => {
             await saveSettings(updated);
             setSettings(updated);

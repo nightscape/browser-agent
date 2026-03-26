@@ -4,6 +4,7 @@ if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
 }
 
 import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import {
@@ -97,10 +98,10 @@ app.get("/bookmarklet", (c) => {
 
   // Loader: inject <script> tag that loads the IIFE bundle, then init.
   const loader = `(function(){if(window.SensAI)return;`
-    + `var s=document.createElement('script');`
-    + `s.src='${origin}/sensai-widget.iife.js';`
-    + `s.onload=function(){window.SensAI.init({serverUrl:'${origin}'})};`
-    + `document.head.appendChild(s)`
+    + `fetch('${origin}/sensai-widget.iife.js')`
+    + `.then(function(r){return r.text()})`
+    + `.then(function(code){new Function(code)();`
+    + `window.SensAI.init({serverUrl:'${origin}'})})`
     + `})()`;
 
   const code = `javascript:void(${encodeURIComponent(loader)})`;
@@ -119,25 +120,15 @@ p{line-height:1.6}</style></head>
   return c.html(html);
 });
 
-// ── Userscript (dynamically generated with correct server URL) ───────────
-app.get("/sensai.user.js", (c) => {
+// ── Userscript (serves static file with correct server URL) ──────────────
+app.get("/sensai.user.js", async (c) => {
+  const { readFile } = await import("node:fs/promises");
+  const { join, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const source = await readFile(join(root, "src/widget/sensai.user.js"), "utf-8");
   const origin = httpsOrigin(c.req.url);
-  const script = `// ==UserScript==
-// @name         SensAI Widget
-// @namespace    https://sensai.dev
-// @version      0.1.0
-// @description  Inject SensAI chat assistant into any page
-// @match        *://*/*
-// @grant        none
-// @run-at       document-idle
-// ==/UserScript==
-(function(){
-  "use strict";
-  var s=document.createElement("script");
-  s.src="${origin}/sensai-widget.iife.js";
-  s.onload=function(){window.SensAI.init({serverUrl:"${origin}"})};
-  document.head.appendChild(s);
-})();`;
+  const script = source.replaceAll("__SENSAI_SERVER__", origin);
   c.header("Content-Type", "application/javascript");
   return c.body(script);
 });
@@ -310,7 +301,23 @@ if (isDev) {
     appType: "spa",
   });
 
-  const server = createHttpServer(async (req, res) => {
+  // Use HTTPS if mkcert certs exist (needed for userscript on HTTPS sites)
+  const { existsSync, readFileSync } = await import("node:fs");
+  const { join, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const proxyDir = dirname(fileURLToPath(import.meta.url));
+  const certPath = join(proxyDir, "localhost-cert.pem");
+  const keyPath = join(proxyDir, "localhost-key.pem");
+  const useTls = existsSync(certPath) && existsSync(keyPath);
+  const tlsOpts = useTls
+    ? { key: readFileSync(keyPath), cert: readFileSync(certPath) }
+    : undefined;
+
+  const createNodeServer = useTls
+    ? (handler: Parameters<typeof createHttpsServer>[1]) => createHttpsServer(tlsOpts!, handler)
+    : createHttpServer;
+
+  const server = createNodeServer(async (req, res) => {
     const url = req.url ?? "/";
 
     // API, MCP, and widget routes → Hono
@@ -328,7 +335,7 @@ if (isDev) {
         : await readBody(req);
 
       const response = await app.fetch(
-        new Request(new URL(url, `http://localhost:${port}`), {
+        new Request(new URL(url, `${protocol}://localhost:${port}`), {
           method: req.method,
           headers,
           body,
@@ -358,8 +365,9 @@ if (isDev) {
     vite.middlewares(req, res);
   });
 
+  const protocol = useTls ? "https" : "http";
   server.listen(port, () => {
-    console.log(`SensAI dev server on http://localhost:${port}`);
+    console.log(`SensAI dev server on ${protocol}://localhost:${port}`);
   });
 } else {
   // Prod: serve built static files for non-API routes

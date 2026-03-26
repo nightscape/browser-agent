@@ -1,4 +1,4 @@
-export type SkillVariableType = "text" | "url" | "number" | "choice" | "multiline";
+export type SkillVariableType = "text" | "url" | "number" | "choice" | "multichoice" | "multiline";
 
 export interface SkillVariable {
   name: string;
@@ -33,7 +33,11 @@ export function labelFromName(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function parseVariables(template: string): SkillVariable[] {
+export interface VariableRegistry {
+  [name: string]: { type: "choice" | "multichoice"; label: string; options: string[] };
+}
+
+export function parseVariables(template: string, registry?: VariableRegistry): SkillVariable[] {
   const seen = new Set<string>();
   const variables: SkillVariable[] = [];
 
@@ -42,18 +46,26 @@ export function parseVariables(template: string): SkillVariable[] {
     if (seen.has(name)) continue;
     seen.add(name);
 
-    const type = (match[2] as SkillVariableType) ?? "text";
+    const explicitType = match[2] as SkillVariableType | undefined;
     const argsRaw = match[3] ?? "";
     const args: string[] = [];
     for (const argMatch of argsRaw.matchAll(QUOTED_ARG_RE)) {
       args.push(argMatch[1]!);
     }
 
-    const variable: SkillVariable = { name, type, label: labelFromName(name) };
+    // Implicit lookup: bare {{ name }} resolves from registry if available
+    const def = !explicitType ? registry?.[name] : undefined;
+    const type: SkillVariableType = explicitType ?? def?.type ?? "text";
+    const label = def?.label ?? labelFromName(name);
+    const choices = (type === "choice" || type === "multichoice")
+      ? (args.length > 0 ? args : def?.options ?? [])
+      : undefined;
 
-    if (type === "choice") {
-      variable.choices = args;
-      if (args.length > 0) variable.default = args[0];
+    const variable: SkillVariable = { name, type, label };
+
+    if (choices) {
+      variable.choices = choices;
+      if (choices.length > 0) variable.default = choices[0];
     } else if (args.length > 0) {
       variable.default = args[0];
     }
@@ -62,6 +74,32 @@ export function parseVariables(template: string): SkillVariable[] {
   }
 
   return variables;
+}
+
+/**
+ * Collect variables that should appear in global settings:
+ * only variables with a registry definition are considered global.
+ */
+export function collectGlobalVariables(
+  skills: SkillDefinition[],
+  registry: VariableRegistry,
+): SkillVariable[] {
+  const fromSkills = new Map<string, SkillVariable>();
+  for (const skill of skills) {
+    for (const v of skill.variables) {
+      if (!fromSkills.has(v.name)) fromSkills.set(v.name, v);
+    }
+  }
+
+  return Object.entries(registry).map(([name, def]) =>
+    fromSkills.get(name) ?? {
+      name,
+      type: def.type,
+      label: def.label,
+      choices: def.options,
+      default: def.options[0],
+    },
+  );
 }
 
 export function expandTemplate(

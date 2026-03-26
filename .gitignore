@@ -8,3 +8,4 @@ dist-widget/
 .fastembed_cache/
 .mastra/
 bin/
+*.pem
