@@ -1,15 +1,16 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, basename, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { SkillDefinition } from "../shared/skills.js";
+import type { SkillDefinition, VariableRegistry } from "../shared/skills.js";
 import { parseVariables } from "../shared/skills.js";
+import { loadEnvConfig } from "./env-config.js";
 
 const SKILLS_DIR = resolve(
   process.env.SKILLS_DIR ??
   new URL("skills", import.meta.url).pathname,
 );
 
-export function parseSkillFile(name: string, content: string, category?: string): SkillDefinition {
+export function parseSkillFile(name: string, content: string, category?: string, registry?: VariableRegistry): SkillDefinition {
   const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (!match)
     throw new Error(
@@ -27,7 +28,7 @@ export function parseSkillFile(name: string, content: string, category?: string)
     category,
     description: frontmatter.description,
     agent: frontmatter.agent,
-    variables: parseVariables(template),
+    variables: parseVariables(template, registry),
     template,
     source: "server",
   };
@@ -71,7 +72,8 @@ export async function loadSkill(name: string): Promise<SkillDefinition> {
   assert(filePath.startsWith(SKILLS_DIR + "/"), `Invalid skill path: ${name}`);
   const content = await readFile(filePath, "utf-8");
   const category = name.includes("/") ? name.split("/")[0] : undefined;
-  return parseSkillFile(name, content, category);
+  const config = await loadEnvConfig();
+  return parseSkillFile(name, content, category, config.variableDefinitions);
 }
 
 function assert(condition: boolean, message: string): asserts condition {

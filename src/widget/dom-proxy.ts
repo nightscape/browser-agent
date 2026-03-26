@@ -6,6 +6,11 @@
 // don't create a fresh Map — the request() and handleDomResponse() callers may
 // end up in different module instances after HMR, but they share the same Map.
 
+/** The host page window — `opener` for popup mode, `parent` for iframe mode. */
+export function hostWindow(): Window {
+  return window.opener ?? window.parent;
+}
+
 const PENDING_KEY = "__sensai_dom_pending";
 
 function getPendingRequests(): Map<string, (result: unknown) => void> {
@@ -28,7 +33,7 @@ function request(method: string, args: Record<string, unknown>): Promise<unknown
   const pending = getPendingRequests();
   return new Promise((resolve) => {
     pending.set(requestId, resolve);
-    window.parent.postMessage({ type: "sensai:dom", requestId, method, ...args }, "*");
+    hostWindow().postMessage({ type: "sensai:dom", requestId, method, ...args }, "*");
   });
 }
 

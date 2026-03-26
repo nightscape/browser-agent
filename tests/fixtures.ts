@@ -2,7 +2,7 @@ import { type Page, type Locator, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-export const SENSAI_SERVER = "http://localhost:4222";
+export const SENSAI_SERVER = process.env.SENSAI_SERVER ?? "http://localhost:4222";
 
 // ── Locators (shared across widget + normal page) ───────────────────────────
 
@@ -86,4 +86,27 @@ export async function setupFakePage(page: Page) {
     route.fulfill({ body: TARGET_HTML, contentType: "text/html" }),
   );
   await page.goto("http://test-target.local/");
+}
+
+const TRUSTED_TYPES_CSP =
+  "require-trusted-types-for 'script'; trusted-types 'none'";
+
+export async function setupTrustedTypesPage(page: Page) {
+  await page.route("http://test-target.local/**", (route) =>
+    route.fulfill({
+      body: TARGET_HTML,
+      contentType: "text/html",
+      headers: { "Content-Security-Policy": TRUSTED_TYPES_CSP },
+    }),
+  );
+  await page.goto("http://test-target.local/");
+}
+
+export async function injectWidgetIIFE(page: Page) {
+  const code = readFileSync(resolve("dist-widget/sensai-widget.iife.js"), "utf-8");
+  await page.evaluate(code);
+  await page.evaluate(
+    (serverUrl) => (window as any).SensAI.init({ serverUrl }),
+    SENSAI_SERVER,
+  );
 }

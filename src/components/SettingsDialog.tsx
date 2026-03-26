@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
 import type { Settings } from "../storage/settings";
 import type { McpServerEntry, AgentInfo, PredefinedMcpServer, EnvConfig } from "../../shared/types";
+import type { SkillVariable } from "../../shared/skills";
+import { VariableInput } from "./VariableInput";
 
 interface Props {
   settings: Settings;
   agents: AgentInfo[];
   predefinedMcpServers: Record<string, PredefinedMcpServer>;
   envConfig: EnvConfig;
+  globalVariables: SkillVariable[];
   onSave: (settings: Settings) => void;
   onClose: () => void;
 }
@@ -17,7 +20,7 @@ type CopilotAuthState =
   | { step: "done" }
   | { step: "error"; message: string };
 
-export function SettingsDialog({ settings, agents, predefinedMcpServers, envConfig, onSave, onClose }: Props) {
+export function SettingsDialog({ settings, agents, predefinedMcpServers, envConfig, globalVariables, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<Settings>({ ...settings });
   const [mcpName, setMcpName] = useState("");
   const [mcpUrl, setMcpUrl] = useState("");
@@ -605,42 +608,66 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           for conditionals.
         </p>
 
-        {Object.entries(draft.templateVars).map(([name, value]) => (
-          <div
-            key={name}
-            className="mb-2 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2 text-sm"
-          >
-            <span className="shrink-0 font-mono text-neutral-400">
-              {name}
-              {name in envConfig.templateVars && (
-                <span className="ml-1 rounded bg-neutral-700 px-1 py-0.5 font-sans text-[10px] text-neutral-500">
-                  env
-                </span>
-              )}
-            </span>
-            <span className="text-neutral-400">=</span>
-            <input
-              value={value}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  templateVars: { ...draft.templateVars, [name]: e.target.value },
-                })
-              }
-              className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={() => {
-                const vars = { ...draft.templateVars };
-                delete vars[name];
-                setDraft({ ...draft, templateVars: vars });
-              }}
-              className="text-neutral-500 hover:text-red-600 dark:text-red-400"
-            >
-              Remove
-            </button>
-          </div>
-        ))}
+        {(() => {
+          const allVarNames = new Set([
+            ...Object.keys(draft.templateVars),
+            ...globalVariables.map((v) => v.name),
+          ]);
+          const globalByName = new Map(globalVariables.map((v) => [v.name, v]));
+
+          return [...allVarNames].map((name) => {
+            const value = draft.templateVars[name] ?? "";
+            const gv = globalByName.get(name);
+            const def = envConfig.variableDefinitions?.[name];
+            const isGlobal = !!gv;
+            const isUserAdded = !isGlobal && !(name in envConfig.templateVars);
+
+            return (
+              <div
+                key={name}
+                className="mb-2 rounded-lg bg-neutral-800 px-3 py-2 text-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-mono text-neutral-400">
+                    {def?.label ?? gv?.label ?? name}
+                    {name in envConfig.templateVars && (
+                      <span className="ml-1 rounded bg-neutral-700 px-1 py-0.5 font-sans text-[10px] text-neutral-500">
+                        env
+                      </span>
+                    )}
+                  </span>
+                  {isUserAdded && (
+                    <span className="ml-auto">
+                      <button
+                        onClick={() => {
+                          const vars = { ...draft.templateVars };
+                          delete vars[name];
+                          setDraft({ ...draft, templateVars: vars });
+                        }}
+                        className="text-neutral-500 hover:text-red-600 dark:text-red-400 text-xs"
+                      >
+                        Remove
+                      </button>
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1.5">
+                  <VariableInput
+                    type={def?.type ?? gv?.type ?? "text"}
+                    value={value}
+                    choices={def?.options ?? gv?.choices}
+                    onChange={(val) =>
+                      setDraft({
+                        ...draft,
+                        templateVars: { ...draft.templateVars, [name]: val },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            );
+          });
+        })()}
 
         <div className="flex gap-2">
           <input

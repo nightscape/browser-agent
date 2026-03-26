@@ -18,6 +18,7 @@ let destroyFn: (() => void) | null = null;
 
 function init(options: SensAIWidgetOptions = {}): void {
   if (destroyFn) return;
+  if (window !== window.top || new URLSearchParams(location.search).has("widget")) return;
 
   const serverUrl = options.serverUrl ?? getScriptOrigin();
   const bridge = createBridge({ serverUrl });

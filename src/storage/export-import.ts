@@ -1,24 +1,46 @@
 import { openDB } from "./db";
 import type { ThreadMetadata, StoredMessage } from "./threads";
 import type { Settings } from "./settings";
+import type { SkillDefinition } from "../../shared/skills";
+import { parseVariables } from "../../shared/skills";
+
+export interface ExportSkill {
+  name: string;
+  category?: string;
+  description: string;
+  agent?: string;
+  template: string;
+}
 
 export interface ExportData {
-  version: 1;
+  version: 2;
   exportedAt: string;
   threads?: ThreadMetadata[];
   messages?: StoredMessage[];
   settings?: Omit<Settings, "apiKey">;
+  skills?: ExportSkill[];
 }
 
 export interface ExportOptions {
   conversations: boolean;
   settings: boolean;
+  skills: boolean;
+}
+
+function toExportSkill(skill: SkillDefinition): ExportSkill {
+  return {
+    name: skill.name,
+    ...(skill.category ? { category: skill.category } : {}),
+    description: skill.description,
+    ...(skill.agent ? { agent: skill.agent } : {}),
+    template: skill.template,
+  };
 }
 
 export async function exportData(options: ExportOptions): Promise<ExportData> {
   const db = await openDB();
   const data: ExportData = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
   };
 
@@ -51,6 +73,16 @@ export async function exportData(options: ExportOptions): Promise<ExportData> {
     }
   }
 
+  if (options.skills) {
+    const allSkills: SkillDefinition[] = await new Promise((resolve, reject) => {
+      const tx = db.transaction("skills", "readonly");
+      const req = tx.objectStore("skills").getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    data.skills = allSkills.map(toExportSkill);
+  }
+
   return data;
 }
 
@@ -71,6 +103,7 @@ export interface ImportPreview {
   hasSettings: boolean;
   hasMcpServers: boolean;
   hasTemplateVars: boolean;
+  skillCount: number;
 }
 
 export function previewImport(data: ExportData): ImportPreview {
@@ -80,12 +113,14 @@ export function previewImport(data: ExportData): ImportPreview {
     hasSettings: !!data.settings,
     hasMcpServers: !!data.settings && Object.keys(data.settings.mcpServers ?? {}).length > 0,
     hasTemplateVars: !!data.settings && Object.keys(data.settings.templateVars ?? {}).length > 0,
+    skillCount: data.skills?.length ?? 0,
   };
 }
 
 export interface ImportOptions {
   conversations: boolean;
   settings: boolean;
+  skills: boolean;
 }
 
 export async function importData(
@@ -113,6 +148,29 @@ export async function importData(
     });
   }
 
+  if (options.skills && data.skills) {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("skills", "readwrite");
+      const store = tx.objectStore("skills");
+
+      for (const sk of data.skills!) {
+        const full: SkillDefinition = {
+          name: sk.name,
+          category: sk.category,
+          description: sk.description,
+          agent: sk.agent,
+          variables: parseVariables(sk.template),
+          template: sk.template,
+          source: "user",
+        };
+        store.put(full);
+      }
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   let mergedSettings = currentSettings;
 
   if (options.settings && data.settings) {
@@ -130,7 +188,7 @@ export function validateImportFile(raw: unknown): ExportData {
     throw new Error("Invalid file: not a JSON object");
   }
   const obj = raw as Record<string, unknown>;
-  if (obj.version !== 1) {
+  if (obj.version !== 2) {
     throw new Error(`Unsupported export version: ${obj.version}`);
   }
   return raw as ExportData;

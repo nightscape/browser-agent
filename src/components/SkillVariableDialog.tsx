@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SkillDefinition } from "../../shared/skills";
 import { expandTemplate, displayName } from "../../shared/skills";
+import { VariableInput } from "./VariableInput";
 
 interface Props {
   skill: SkillDefinition;
@@ -17,9 +18,6 @@ export function SkillVariableDialog({ skill, templateVars, onSubmit, onCancel }:
     }
     return initial;
   });
-
-  const set = (name: string, value: string) =>
-    setValues((prev) => ({ ...prev, [name]: value }));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,31 +38,12 @@ export function SkillVariableDialog({ skill, templateVars, onSubmit, onCancel }:
           {skill.variables.map((v) => (
             <label key={v.name} className="flex flex-col gap-1">
               <span className="text-xs text-neutral-400">{v.label}</span>
-              {v.type === "choice" ? (
-                <select
-                  value={values[v.name]}
-                  onChange={(e) => set(v.name, e.target.value)}
-                  className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
-                >
-                  {v.choices!.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              ) : v.type === "multiline" ? (
-                <textarea
-                  value={values[v.name]}
-                  onChange={(e) => set(v.name, e.target.value)}
-                  rows={3}
-                  className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500 resize-y"
-                />
-              ) : (
-                <input
-                  type={v.type === "url" ? "url" : v.type === "number" ? "number" : "text"}
-                  value={values[v.name]}
-                  onChange={(e) => set(v.name, e.target.value)}
-                  className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
-                />
-              )}
+              <VariableInput
+                type={v.type}
+                value={values[v.name] ?? ""}
+                choices={v.choices}
+                onChange={(val) => setValues((prev) => ({ ...prev, [v.name]: val }))}
+              />
             </label>
           ))}
         </div>

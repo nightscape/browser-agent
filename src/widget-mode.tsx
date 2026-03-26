@@ -3,7 +3,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import type { PageContext } from "./widget/context";
-import { handleDomResponse } from "./widget/dom-proxy";
+import { handleDomResponse, hostWindow } from "./widget/dom-proxy";
 
 interface WidgetContextValue {
   isWidget: boolean;
@@ -30,7 +30,7 @@ export function WidgetProvider({ children }: { children: ReactNode }) {
   const [contextDismissed, setContextDismissed] = useState(false);
 
   const refreshPageContext = useCallback(() => {
-    window.parent.postMessage({ type: "sensai:request-context" }, "*");
+    hostWindow().postMessage({ type: "sensai:request-context" }, "*");
   }, []);
 
   const dismissContext = useCallback(() => {
@@ -56,7 +56,7 @@ export function WidgetProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("message", onMessage);
     // Signal readiness to the bridge
-    window.parent.postMessage({ type: "sensai:ready" }, "*");
+    hostWindow().postMessage({ type: "sensai:ready" }, "*");
 
     return () => window.removeEventListener("message", onMessage);
   }, []);

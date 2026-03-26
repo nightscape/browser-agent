@@ -2,9 +2,11 @@ import { test, expect } from "@playwright/test";
 import {
   SENSAI_SERVER,
   injectWidget,
+  injectWidgetIIFE,
   injectUserscript,
   widgetLocators,
   setupFakePage,
+  setupTrustedTypesPage,
 } from "./fixtures";
 
 test.describe("SensAI Widget", () => {
@@ -63,16 +65,30 @@ test.describe("SensAI Widget", () => {
   });
 });
 
+test.describe("Trusted Types compatibility", () => {
+  test("widget IIFE produces no Trusted Types violations", async ({ page }) => {
+    const violations: string[] = [];
+    page.on("pageerror", (err) => {
+      if (err.message.includes("TrustedHTML") || err.message.includes("TrustedScript") || err.message.includes("TrustedScriptURL")) {
+        violations.push(err.message);
+      }
+    });
+
+    await setupTrustedTypesPage(page);
+    await injectWidgetIIFE(page);
+
+    const { fab } = widgetLocators(page);
+    await expect(fab).toBeVisible();
+    expect(violations).toEqual([]);
+  });
+});
+
 test.describe("Userscript loader", () => {
-  test("userscript loads IIFE from server and creates widget", async ({
+  test("IIFE bundle from server creates widget", async ({
     page,
   }) => {
-    await page.goto(`${SENSAI_SERVER}/`);
-    await page.evaluate(() => {
-      document.head.innerHTML = "<title>Test</title>";
-      document.body.innerHTML = "<h1>Test Page</h1>";
-    });
-    await injectUserscript(page);
+    await setupFakePage(page);
+    await injectWidgetIIFE(page);
 
     const { fab } = widgetLocators(page);
     await expect(fab).toBeVisible();

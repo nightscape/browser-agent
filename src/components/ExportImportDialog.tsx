@@ -25,6 +25,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
   const [exportOpts, setExportOpts] = useState<ExportOptions>({
     conversations: true,
     settings: true,
+    skills: true,
   });
   const [exporting, setExporting] = useState(false);
 
@@ -33,6 +34,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
   const [importOpts, setImportOpts] = useState<ImportOptions>({
     conversations: true,
     settings: true,
+    skills: true,
   });
   const [importError, setImportError] = useState<string | null>(null);
   const [importDone, setImportDone] = useState(false);
@@ -61,6 +63,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
     setImportOpts({
       conversations: preview.threadCount > 0,
       settings: preview.hasSettings,
+      skills: preview.skillCount > 0,
     });
   };
 
@@ -136,6 +139,11 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
                 exportOpts.settings,
                 (v) => setExportOpts({ ...exportOpts, settings: v }),
               )}
+              {checkbox(
+                "Skills (user-defined)",
+                exportOpts.skills,
+                (v) => setExportOpts({ ...exportOpts, skills: v }),
+              )}
             </div>
 
             <div className="flex justify-end gap-2">
@@ -147,7 +155,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
               </button>
               <button
                 onClick={handleExport}
-                disabled={exporting || (!exportOpts.conversations && !exportOpts.settings)}
+                disabled={exporting || (!exportOpts.conversations && !exportOpts.settings && !exportOpts.skills)}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-40"
               >
                 {exporting ? "Exporting..." : "Export"}
@@ -181,6 +189,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
                   {importPreview.hasSettings && ", settings"}
                   {importPreview.hasMcpServers && ", MCP servers"}
                   {importPreview.hasTemplateVars && ", template variables"}
+                  {importPreview.skillCount > 0 && `, ${importPreview.skillCount} skills`}
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -195,6 +204,12 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
                     importOpts.settings,
                     (v) => setImportOpts({ ...importOpts, settings: v }),
                     !importPreview.hasSettings,
+                  )}
+                  {checkbox(
+                    `Skills (${importPreview.skillCount} user-defined)`,
+                    importOpts.skills,
+                    (v) => setImportOpts({ ...importOpts, skills: v }),
+                    importPreview.skillCount === 0,
                   )}
                 </div>
               </div>
@@ -216,7 +231,7 @@ export function ExportImportDialog({ settings, onImportComplete, onClose }: Prop
               {!importDone && (
                 <button
                   onClick={handleImport}
-                  disabled={importing || !importFile || (!importOpts.conversations && !importOpts.settings)}
+                  disabled={importing || !importFile || (!importOpts.conversations && !importOpts.settings && !importOpts.skills)}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-40"
                 >
                   {importing ? "Importing..." : "Import"}
