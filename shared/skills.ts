@@ -13,9 +13,56 @@ export interface SkillDefinition {
   category?: string;
   description: string;
   agent?: string;
+  urlPatterns?: string[];
+  titlePatterns?: string[];
   variables: SkillVariable[];
   template: string;
   source: "server" | "user";
+}
+
+/**
+ * Test whether a URL matches any of the given glob-style patterns.
+ * Supports `*` (any chars except `/`) and `**` (any chars including `/`).
+ */
+export function matchesUrl(patterns: string[], url: string): boolean {
+  return patterns.some((pattern) => {
+    const re = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*/g, "\0")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\0/g, ".*");
+    return new RegExp(`^${re}$`).test(url);
+  });
+}
+
+/**
+ * Test whether a page title matches any of the given glob-style patterns.
+ * Supports `*` as a wildcard for any sequence of characters.
+ */
+export function matchesTitle(patterns: string[], title: string): boolean {
+  return patterns.some((pattern) => {
+    const re = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*");
+    return new RegExp(`^${re}$`).test(title);
+  });
+}
+
+/**
+ * Check whether a skill's url/title patterns match the given page.
+ * If both url and title patterns are defined, both must match (AND).
+ * Returns false for skills that define neither.
+ */
+export function skillMatchesPage(
+  skill: SkillDefinition,
+  page: { url: string; title: string },
+): boolean {
+  const hasUrl = !!skill.urlPatterns?.length;
+  const hasTitle = !!skill.titlePatterns?.length;
+  if (!hasUrl && !hasTitle) return false;
+  if (hasUrl && !matchesUrl(skill.urlPatterns!, page.url)) return false;
+  if (hasTitle && !matchesTitle(skill.titlePatterns!, page.title)) return false;
+  return true;
 }
 
 export function displayName(skill: SkillDefinition): string {

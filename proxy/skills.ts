@@ -23,20 +23,36 @@ export function parseSkillFile(name: string, content: string, category?: string,
   if (typeof frontmatter.description !== "string")
     throw new Error(`Skill ${name} missing description in frontmatter`);
 
+  const urlPatterns = toPatternArray(frontmatter.url);
+  const titlePatterns = toPatternArray(frontmatter.title);
+
   return {
     name,
     category,
     description: frontmatter.description,
     agent: frontmatter.agent,
+    urlPatterns,
+    titlePatterns,
     variables: parseVariables(template, registry),
     template,
     source: "server",
   };
 }
 
-export async function listSkills(): Promise<
-  { name: string; description: string; category?: string }[]
-> {
+function toPatternArray(raw: unknown): string[] | undefined {
+  if (raw == null) return undefined;
+  return Array.isArray(raw) ? raw as string[] : [raw as string];
+}
+
+export interface SkillSummary {
+  name: string;
+  description: string;
+  category?: string;
+  urlPatterns?: string[];
+  titlePatterns?: string[];
+}
+
+export async function listSkills(): Promise<SkillSummary[]> {
   let entries;
   try {
     entries = await readdir(SKILLS_DIR, { withFileTypes: true });
@@ -45,13 +61,13 @@ export async function listSkills(): Promise<
     return [];
   }
 
-  const skills: { name: string; description: string; category?: string }[] = [];
+  const skills: SkillSummary[] = [];
 
   for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".md")) {
       const name = basename(entry.name, ".md");
       const skill = await loadSkill(name);
-      skills.push({ name: skill.name, description: skill.description });
+      skills.push({ name: skill.name, description: skill.description, urlPatterns: skill.urlPatterns, titlePatterns: skill.titlePatterns });
     } else if (entry.isDirectory()) {
       const category = entry.name;
       const subFiles = await readdir(join(SKILLS_DIR, category));
@@ -59,7 +75,7 @@ export async function listSkills(): Promise<
         if (!file.endsWith(".md")) continue;
         const name = `${category}/${basename(file, ".md")}`;
         const skill = await loadSkill(name);
-        skills.push({ name: skill.name, description: skill.description, category });
+        skills.push({ name: skill.name, description: skill.description, category, urlPatterns: skill.urlPatterns, titlePatterns: skill.titlePatterns });
       }
     }
   }
