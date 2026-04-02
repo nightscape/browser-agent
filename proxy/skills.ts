@@ -23,20 +23,31 @@ export function parseSkillFile(name: string, content: string, category?: string,
   if (typeof frontmatter.description !== "string")
     throw new Error(`Skill ${name} missing description in frontmatter`);
 
+  const rawUrl = frontmatter.url;
+  const urlPatterns = rawUrl
+    ? (Array.isArray(rawUrl) ? rawUrl as string[] : [rawUrl as string])
+    : undefined;
+
   return {
     name,
     category,
     description: frontmatter.description,
     agent: frontmatter.agent,
+    urlPatterns,
     variables: parseVariables(template, registry),
     template,
     source: "server",
   };
 }
 
-export async function listSkills(): Promise<
-  { name: string; description: string; category?: string }[]
-> {
+export interface SkillSummary {
+  name: string;
+  description: string;
+  category?: string;
+  urlPatterns?: string[];
+}
+
+export async function listSkills(): Promise<SkillSummary[]> {
   let entries;
   try {
     entries = await readdir(SKILLS_DIR, { withFileTypes: true });
@@ -45,13 +56,13 @@ export async function listSkills(): Promise<
     return [];
   }
 
-  const skills: { name: string; description: string; category?: string }[] = [];
+  const skills: SkillSummary[] = [];
 
   for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".md")) {
       const name = basename(entry.name, ".md");
       const skill = await loadSkill(name);
-      skills.push({ name: skill.name, description: skill.description });
+      skills.push({ name: skill.name, description: skill.description, urlPatterns: skill.urlPatterns });
     } else if (entry.isDirectory()) {
       const category = entry.name;
       const subFiles = await readdir(join(SKILLS_DIR, category));
@@ -59,7 +70,7 @@ export async function listSkills(): Promise<
         if (!file.endsWith(".md")) continue;
         const name = `${category}/${basename(file, ".md")}`;
         const skill = await loadSkill(name);
-        skills.push({ name: skill.name, description: skill.description, category });
+        skills.push({ name: skill.name, description: skill.description, category, urlPatterns: skill.urlPatterns });
       }
     }
   }

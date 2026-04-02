@@ -27,7 +27,7 @@ import {
 } from "./storage/settings";
 import { createIndexedDBThreadListAdapter } from "./storage/adapters";
 import type { SkillDefinition } from "../shared/skills";
-import { collectGlobalVariables } from "../shared/skills";
+import { collectGlobalVariables, matchesUrl, expandTemplate } from "../shared/skills";
 import { listUserSkills, saveUserSkill } from "./storage/skills";
 import { useMcpTools } from "./use-mcp-tools";
 import { useBrowserTools } from "./use-browser-tools";
@@ -57,12 +57,14 @@ function SystemPromptBridge({
   defaultSystemPrompt,
   agents,
   settings,
+  urlContext,
 }: {
   defaultSystemPrompt: string;
   agents: AgentDefinition[];
   settings: Settings;
+  urlContext?: string;
 }) {
-  useSystemPrompt(defaultSystemPrompt, agents, settings.activeAgent, settings.templateVars);
+  useSystemPrompt(defaultSystemPrompt, agents, settings.activeAgent, settings.templateVars, urlContext);
   return null;
 }
 
@@ -108,6 +110,7 @@ function AppInner({
   defaultSystemPrompt,
   skills,
   predefinedMcpServers,
+  urlContext,
   onActivateSkill,
   onNewSkill,
   onOpenSettings,
@@ -118,6 +121,7 @@ function AppInner({
   defaultSystemPrompt: string;
   skills: SkillDefinition[];
   predefinedMcpServers: Record<string, PredefinedMcpServer>;
+  urlContext?: string;
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
   onOpenSettings: () => void;
@@ -151,7 +155,7 @@ function AppInner({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadFromUrl />
-      <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} />
+      <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} urlContext={urlContext} />
       <McpToolsBridge settings={settings} predefinedMcpServers={predefinedMcpServers} />
       <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
@@ -199,7 +203,7 @@ export function App() {
 }
 
 function AppRoot() {
-  const { isWidget } = useWidgetMode();
+  const { isWidget, pageContext } = useWidgetMode();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
@@ -217,6 +221,19 @@ function AppRoot() {
     () => collectGlobalVariables(skills, envConfig?.variableDefinitions ?? {}),
     [skills, envConfig?.variableDefinitions],
   );
+
+  const urlContext = useMemo(() => {
+    const url = pageContext?.url;
+    if (!url || skills.length === 0) return undefined;
+    const matched = skills.filter(
+      (s) => s.urlPatterns && s.urlPatterns.length > 0 && matchesUrl(s.urlPatterns, url),
+    );
+    if (matched.length === 0) return undefined;
+    const vars = settings?.templateVars ?? {};
+    return matched
+      .map((s) => expandTemplate(s.template, vars))
+      .join("\n\n");
+  }, [pageContext?.url, skills, settings?.templateVars]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -372,6 +389,7 @@ function AppRoot() {
           defaultSystemPrompt={envConfig?.defaultSystemPrompt ?? ""}
           skills={skills}
           predefinedMcpServers={predefinedMcpServers}
+          urlContext={urlContext}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}
           onNewSkill={() => setShowSkillEditor(true)}

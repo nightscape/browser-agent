@@ -14,14 +14,17 @@ export function useSystemPrompt(
   agents: AgentDefinition[],
   activeAgent: string | undefined,
   templateVars: Record<string, string>,
+  urlContext?: string,
 ) {
   const prompt = useMemo(() => {
     const agent = activeAgent
       ? agents.find((a) => a.name === activeAgent)
       : undefined;
     const template = agent?.systemPrompt ?? defaultSystemPrompt;
-    return renderTemplate(template, templateVars);
-  }, [defaultSystemPrompt, agents, activeAgent, templateVars]);
+    const base = renderTemplate(template, templateVars);
+    if (!urlContext) return base;
+    return `${base}\n\n${urlContext}`;
+  }, [defaultSystemPrompt, agents, activeAgent, templateVars, urlContext]);
 
   useAssistantInstructions(prompt);
 }

@@ -13,9 +13,25 @@ export interface SkillDefinition {
   category?: string;
   description: string;
   agent?: string;
+  urlPatterns?: string[];
   variables: SkillVariable[];
   template: string;
   source: "server" | "user";
+}
+
+/**
+ * Test whether a URL matches any of the given glob-style patterns.
+ * Supports `*` (any chars except `/`) and `**` (any chars including `/`).
+ */
+export function matchesUrl(patterns: string[], url: string): boolean {
+  return patterns.some((pattern) => {
+    const re = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*/g, "\0")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\0/g, ".*");
+    return new RegExp(`^${re}$`).test(url);
+  });
 }
 
 export function displayName(skill: SkillDefinition): string {
