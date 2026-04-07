@@ -4,6 +4,8 @@
 // The bridge does NOT import tools.ts — it only does raw DOM operations
 // requested by the iframe via postMessage.
 
+import type { DomProxy } from "./dom-types";
+
 export interface BridgeOptions {
   serverUrl: string;
 }
@@ -127,143 +129,252 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
   }
   window.addEventListener("message", onMessage);
 
-  // ── Generic DOM proxy ─────────────────────────────────────────────────────
-  // Each method does raw DOM work and sends the result back.
-  function handleDomRequest(data: Record<string, unknown>): void {
-    const { requestId, method } = data;
-    let result: unknown;
+  // ── DOM handlers ─────────────────────────────────────────────────────────
+  // Implements DomProxy — each method does raw DOM work synchronously (or
+  // returns a Promise for async ops like waitForSelector).
 
-    switch (method) {
-      case "getText": {
-        const selector = (data.selector as string) || "body";
-        const maxLength = (data.maxLength as number) || 50_000;
-        const el = document.querySelector(selector);
-        if (!el) {
-          result = `No element found for selector: ${selector}`;
+  function requireEl(selector: string): Element {
+    const el = document.querySelector(selector);
+    if (!el) throw new Error(`No element found for selector: ${selector}`);
+    return el;
+  }
+
+  const handlers: DomProxy = {
+    // ── Read methods ────────────────────────────────────────────────────
+
+    getText({ selector = "body", maxLength = 50_000 }) {
+      const el = requireEl(selector);
+      const clone = el.cloneNode(true) as Element;
+      for (const tag of clone.querySelectorAll("script, style, noscript, svg")) tag.remove();
+      let text = (clone.textContent ?? "").trim();
+      if (text.length > maxLength) {
+        text = text.slice(0, maxLength) + `\n\n[Truncated at ${maxLength} chars, ${text.length} total]`;
+      }
+      return text;
+    },
+
+    queryElements({ selector, limit = 20 }) {
+      const elements = document.querySelectorAll(selector);
+      const keepAttrs = ["class", "id", "href", "src", "data-testid", "role", "aria-label", "type", "name", "value"];
+      const items: object[] = [];
+      for (let i = 0; i < Math.min(elements.length, limit); i++) {
+        const el = elements[i]!;
+        const attrs: Record<string, string> = {};
+        for (const attr of el.attributes) {
+          if (keepAttrs.includes(attr.name)) attrs[attr.name] = attr.value;
+        }
+        items.push({
+          tag: el.tagName.toLowerCase(),
+          text: el.textContent?.trim().slice(0, 200) ?? "",
+          attrs,
+        });
+      }
+      return items;
+    },
+
+    getSelection() {
+      return window.getSelection()?.toString().trim() ?? "";
+    },
+
+    getHeadings() {
+      const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+      return Array.from(headings).map((el) => {
+        const level = el.tagName.toLowerCase();
+        const indent = "  ".repeat(parseInt(level[1]!) - 1);
+        return `${indent}${level}: ${el.textContent?.trim()}`;
+      });
+    },
+
+    getMetadata() {
+      const meta: Record<string, string> = {
+        url: location.href,
+        title: document.title,
+      };
+      for (const el of document.querySelectorAll("meta[name], meta[property]")) {
+        const key = el.getAttribute("name") || el.getAttribute("property") || "";
+        const content = el.getAttribute("content") || "";
+        if (key && content) meta[key] = content;
+      }
+      return meta;
+    },
+
+    getLinks({ selector = "body", limit = 50 }) {
+      const container = document.querySelector(selector);
+      if (!container) return [];
+      const links = container.querySelectorAll("a[href]");
+      return Array.from(links).slice(0, limit).map((a) => ({
+        text: a.textContent?.trim().slice(0, 100) ?? "",
+        href: a.getAttribute("href") ?? "",
+      }));
+    },
+
+    getTables({ selector = "table", maxRows = 100 }) {
+      const tables = document.querySelectorAll(selector);
+      const results: object[] = [];
+      for (const table of tables) {
+        const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"))
+          .map((th) => th.textContent?.trim() ?? "");
+        const rows: Record<string, string>[] = [];
+        const bodyRows = table.querySelectorAll("tbody tr, tr:not(:first-child)");
+        for (let i = 0; i < Math.min(bodyRows.length, maxRows); i++) {
+          const cells = bodyRows[i]!.querySelectorAll("td");
+          const row: Record<string, string> = {};
+          cells.forEach((cell, j) => {
+            row[headers[j] || `col_${j}`] = cell.textContent?.trim() ?? "";
+          });
+          if (Object.keys(row).length > 0) rows.push(row);
+        }
+        results.push({ headers, rows, totalRows: bodyRows.length });
+      }
+      return results;
+    },
+
+    getFormFields({ selector = "body" }) {
+      const container = document.querySelector(selector);
+      if (!container) return [];
+      const fields = container.querySelectorAll("input, select, textarea");
+      return Array.from(fields).map((el) => {
+        const input = el as HTMLInputElement;
+        const label = document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim();
+        return {
+          tag: el.tagName.toLowerCase(),
+          type: input.type || undefined,
+          name: input.name || undefined,
+          id: input.id || undefined,
+          value: input.type === "password" ? "[hidden]" : input.value.slice(0, 200),
+          label: label ?? undefined,
+          placeholder: input.placeholder || undefined,
+        };
+      });
+    },
+
+    // ── Interaction methods ─────────────────────────────────────────────
+
+    click({ selector }) {
+      const el = requireEl(selector) as HTMLElement;
+      el.click();
+      return `Clicked ${selector}`;
+    },
+
+    fill({ selector, value }) {
+      const el = requireEl(selector) as HTMLInputElement | HTMLTextAreaElement;
+      el.focus();
+      el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return `Filled ${selector} with "${value.slice(0, 50)}"`;
+    },
+
+    selectOption({ selector, value }) {
+      const el = requireEl(selector) as HTMLSelectElement;
+      // Try matching by value first, then by visible text
+      let matched = false;
+      for (const opt of el.options) {
+        if (opt.value === value || opt.textContent?.trim() === value) {
+          el.value = opt.value;
+          matched = true;
           break;
         }
-        const clone = el.cloneNode(true) as Element;
-        for (const tag of clone.querySelectorAll("script, style, noscript, svg")) tag.remove();
-        let text = (clone.textContent ?? "").trim();
-        if (text.length > maxLength) {
-          text = text.slice(0, maxLength) + `\n\n[Truncated at ${maxLength} chars, ${text.length} total]`;
-        }
-        result = text;
-        break;
       }
+      if (!matched) throw new Error(`No option matching "${value}" in ${selector}`);
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return `Selected "${value}" in ${selector}`;
+    },
 
-      case "queryElements": {
-        const selector = data.selector as string;
-        const limit = (data.limit as number) || 20;
-        const elements = document.querySelectorAll(selector);
-        const items: object[] = [];
-        const keepAttrs = ["class", "id", "href", "src", "data-testid", "role", "aria-label", "type", "name", "value"];
-        for (let i = 0; i < Math.min(elements.length, limit); i++) {
-          const el = elements[i]!;
-          const attrs: Record<string, string> = {};
-          for (const attr of el.attributes) {
-            if (keepAttrs.includes(attr.name)) attrs[attr.name] = attr.value;
+    check({ selector, checked }) {
+      const el = requireEl(selector) as HTMLInputElement;
+      el.checked = checked;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return `${checked ? "Checked" : "Unchecked"} ${selector}`;
+    },
+
+    scrollTo({ selector }) {
+      const el = requireEl(selector);
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return `Scrolled to ${selector}`;
+    },
+
+    focus({ selector }) {
+      const el = requireEl(selector) as HTMLElement;
+      el.focus();
+      return `Focused ${selector}`;
+    },
+
+    hover({ selector }) {
+      const el = requireEl(selector) as HTMLElement;
+      el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      return `Hovered over ${selector}`;
+    },
+
+    waitForSelector({ selector, timeoutMs = 5000 }) {
+      const existing = document.querySelector(selector);
+      if (existing) return `Found ${selector} (already present)`;
+
+      return new Promise<string>((resolve, reject) => {
+        const observer = new MutationObserver(() => {
+          if (document.querySelector(selector)) {
+            observer.disconnect();
+            clearTimeout(timer);
+            resolve(`Found ${selector}`);
           }
-          items.push({
-            tag: el.tagName.toLowerCase(),
-            text: el.textContent?.trim().slice(0, 200) ?? "",
-            attrs,
-          });
-        }
-        result = items;
-        break;
-      }
-
-      case "getSelection":
-        result = window.getSelection()?.toString().trim() ?? "";
-        break;
-
-      case "getHeadings": {
-        const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
-        result = Array.from(headings).map((el) => {
-          const level = el.tagName.toLowerCase();
-          const indent = "  ".repeat(parseInt(level[1]!) - 1);
-          return `${indent}${level}: ${el.textContent?.trim()}`;
         });
-        break;
-      }
+        observer.observe(document.body, { childList: true, subtree: true });
+        const timer = setTimeout(() => {
+          observer.disconnect();
+          reject(new Error(`Timeout waiting for ${selector} after ${timeoutMs}ms`));
+        }, timeoutMs);
+      });
+    },
 
-      case "getMetadata": {
-        const meta: Record<string, string> = {
-          url: location.href,
-          title: document.title,
-        };
-        for (const el of document.querySelectorAll("meta[name], meta[property]")) {
-          const key = el.getAttribute("name") || el.getAttribute("property") || "";
-          const content = el.getAttribute("content") || "";
-          if (key && content) meta[key] = content;
-        }
-        result = meta;
-        break;
-      }
-
-      case "getLinks": {
-        const scope = (data.selector as string) || "body";
-        const limit = (data.limit as number) || 50;
-        const container = document.querySelector(scope);
-        if (!container) { result = []; break; }
-        const links = container.querySelectorAll("a[href]");
-        result = Array.from(links).slice(0, limit).map((a) => ({
-          text: a.textContent?.trim().slice(0, 100) ?? "",
-          href: a.getAttribute("href") ?? "",
-        }));
-        break;
-      }
-
-      case "getTables": {
-        const selector = (data.selector as string) || "table";
-        const maxRows = (data.maxRows as number) || 100;
-        const tables = document.querySelectorAll(selector);
-        const results: object[] = [];
-        for (const table of tables) {
-          const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"))
-            .map((th) => th.textContent?.trim() ?? "");
-          const rows: Record<string, string>[] = [];
-          const bodyRows = table.querySelectorAll("tbody tr, tr:not(:first-child)");
-          for (let i = 0; i < Math.min(bodyRows.length, maxRows); i++) {
-            const cells = bodyRows[i]!.querySelectorAll("td");
-            const row: Record<string, string> = {};
-            cells.forEach((cell, j) => {
-              row[headers[j] || `col_${j}`] = cell.textContent?.trim() ?? "";
-            });
-            if (Object.keys(row).length > 0) rows.push(row);
+    typeText({ selector, text, delayMs = 50 }) {
+      const el = requireEl(selector) as HTMLElement;
+      el.focus();
+      return new Promise<string>((resolve) => {
+        let i = 0;
+        function next() {
+          if (i >= text.length) {
+            resolve(`Typed "${text.slice(0, 50)}" into ${selector}`);
+            return;
           }
-          results.push({ headers, rows, totalRows: bodyRows.length });
+          const char = text[i]!;
+          el.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true }));
+          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+            el.value += char;
+          }
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
+          i++;
+          setTimeout(next, delayMs);
         }
-        result = results;
-        break;
-      }
+        next();
+      });
+    },
 
-      case "getFormFields": {
-        const scope = (data.selector as string) || "body";
-        const container = document.querySelector(scope);
-        if (!container) { result = []; break; }
-        const fields = container.querySelectorAll("input, select, textarea");
-        result = Array.from(fields).map((el) => {
-          const input = el as HTMLInputElement;
-          const label = document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim();
-          return {
-            tag: el.tagName.toLowerCase(),
-            type: input.type || undefined,
-            name: input.name || undefined,
-            id: input.id || undefined,
-            value: input.type === "password" ? "[hidden]" : input.value.slice(0, 200),
-            label: label ?? undefined,
-            placeholder: input.placeholder || undefined,
-          };
-        });
-        break;
-      }
+    pressKey({ selector, key }) {
+      const el = requireEl(selector) as HTMLElement;
+      el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keypress", { key, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+      return `Pressed "${key}" on ${selector}`;
+    },
+  };
 
-      default:
-        result = `Unknown DOM method: ${method}`;
+  // Dispatch a DOM request from the iframe to the matching handler.
+  async function handleDomRequest(data: Record<string, unknown>): Promise<void> {
+    const { requestId, method, ...args } = data;
+    const handler = handlers[method as keyof DomProxy] as ((args: Record<string, unknown>) => unknown) | undefined;
+    let result: unknown;
+    if (handler) {
+      try {
+        result = await handler(args);
+      } catch (e) {
+        result = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else {
+      result = `Unknown DOM method: ${method}`;
     }
-
     sendToTarget({ type: "sensai:dom-result", requestId, result });
   }
 

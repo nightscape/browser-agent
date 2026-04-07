@@ -6,6 +6,8 @@
 // don't create a fresh Map — the request() and handleDomResponse() callers may
 // end up in different module instances after HMR, but they share the same Map.
 
+import type { DomProxy } from "./dom-types";
+
 /** The host page window — `opener` for popup mode, `parent` for iframe mode. */
 export function hostWindow(): Window {
   return window.opener ?? window.parent;
@@ -37,42 +39,12 @@ function request(method: string, args: Record<string, unknown>): Promise<unknown
   });
 }
 
-/** Get textContent of elements matching a selector (stripped of script/style). */
-export async function getText(selector = "body", maxLength = 50_000): Promise<string> {
-  return (await request("getText", { selector, maxLength })) as string;
-}
+// Every method on DomProxy becomes a postMessage request to the bridge.
+// Adding a new method to DomProxy in dom-types.ts is the single step needed;
+// the Proxy here and the handler lookup in bridge.ts both derive from it.
 
-/** Query elements and get structured info (tag, text, selected attributes). */
-export async function queryElements(selector: string, limit = 20): Promise<object[]> {
-  return (await request("queryElements", { selector, limit })) as object[];
-}
-
-/** Get the user's current text selection. */
-export async function getSelection(): Promise<string> {
-  return (await request("getSelection", {})) as string;
-}
-
-/** Get all headings (h1-h6) as structured list. */
-export async function getHeadings(): Promise<string[]> {
-  return (await request("getHeadings", {})) as string[];
-}
-
-/** Get page metadata (URL, title, meta tags). */
-export async function getMetadata(): Promise<Record<string, string>> {
-  return (await request("getMetadata", {})) as Record<string, string>;
-}
-
-/** Get links within a scope. */
-export async function getLinks(selector = "body", limit = 50): Promise<object[]> {
-  return (await request("getLinks", { selector, limit })) as object[];
-}
-
-/** Get table data within a scope. */
-export async function getTables(selector = "table", maxRows = 100): Promise<object[]> {
-  return (await request("getTables", { selector, maxRows })) as object[];
-}
-
-/** Get form fields within a scope. */
-export async function getFormFields(selector = "body"): Promise<object[]> {
-  return (await request("getFormFields", { selector })) as object[];
-}
+export const dom: DomProxy = new Proxy({} as DomProxy, {
+  get(_, method: string) {
+    return (args: Record<string, unknown> = {}) => request(method, args);
+  },
+});

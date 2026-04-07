@@ -1,6 +1,6 @@
 // Client-side browser tools — run inside the iframe, access host DOM via dom-proxy.
 
-import * as dom from "./dom-proxy";
+import { dom } from "./dom-proxy";
 
 export interface BrowserTool {
   description: string;
@@ -9,6 +9,8 @@ export interface BrowserTool {
 }
 
 export const BROWSER_TOOLS: Record<string, BrowserTool> = {
+  // ── Read tools ──────────────────────────────────────────────────────────
+
   read_page_content: {
     description:
       "Read the text content of the current page. Returns the visible text, stripped of scripts and styles. Use 'selector' to narrow to a specific part of the page.",
@@ -27,7 +29,7 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
       },
     },
     async execute(args) {
-      return dom.getText(args.selector as string, args.maxLength as number);
+      return dom.getText({ selector: args.selector as string, maxLength: args.maxLength as number });
     },
   },
 
@@ -49,7 +51,7 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
       required: ["selector"],
     },
     async execute(args) {
-      const results = await dom.queryElements(args.selector as string, args.limit as number);
+      const results = await dom.queryElements({ selector: args.selector as string, limit: args.limit as number });
       return JSON.stringify(results, null, 2);
     },
   },
@@ -101,7 +103,7 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
       },
     },
     async execute(args) {
-      const links = await dom.getLinks(args.selector as string, args.limit as number);
+      const links = await dom.getLinks({ selector: args.selector as string, limit: args.limit as number });
       return JSON.stringify(links, null, 2);
     },
   },
@@ -124,7 +126,7 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
       },
     },
     async execute(args) {
-      const tables = await dom.getTables(args.selector as string, args.maxRows as number);
+      const tables = await dom.getTables({ selector: args.selector as string, maxRows: args.maxRows as number });
       return JSON.stringify(tables, null, 2);
     },
   },
@@ -142,8 +144,217 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
       },
     },
     async execute(args) {
-      const fields = await dom.getFormFields(args.selector as string);
+      const fields = await dom.getFormFields({ selector: args.selector as string });
       return JSON.stringify(fields, null, 2);
+    },
+  },
+
+  // ── Interaction tools ───────────────────────────────────────────────────
+
+  click: {
+    description:
+      "Click an element on the page. Use a CSS selector to identify the target. Useful for clicking buttons, links, tabs, menu items, etc.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to click (e.g. 'button.submit', '#login-btn', 'a[href=\"/next\"]').",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      return dom.click({ selector: args.selector as string });
+    },
+  },
+
+  fill: {
+    description:
+      "Fill an input field or textarea with a value. Clears any existing value first and dispatches input/change events so the page reacts to the change.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the input or textarea (e.g. '#email', 'input[name=\"username\"]').",
+        },
+        value: {
+          type: "string",
+          description: "The value to fill in.",
+        },
+      },
+      required: ["selector", "value"],
+    },
+    async execute(args) {
+      return dom.fill({ selector: args.selector as string, value: args.value as string });
+    },
+  },
+
+  select_option: {
+    description:
+      "Select an option in a <select> dropdown by its value or visible text.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the <select> element.",
+        },
+        value: {
+          type: "string",
+          description: "The option value or visible text to select.",
+        },
+      },
+      required: ["selector", "value"],
+    },
+    async execute(args) {
+      return dom.selectOption({ selector: args.selector as string, value: args.value as string });
+    },
+  },
+
+  check: {
+    description:
+      "Set the checked state of a checkbox or radio button.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the checkbox or radio button.",
+        },
+        checked: {
+          type: "boolean",
+          description: "Whether to check (true) or uncheck (false) the element.",
+        },
+      },
+      required: ["selector", "checked"],
+    },
+    async execute(args) {
+      return dom.check({ selector: args.selector as string, checked: args.checked as boolean });
+    },
+  },
+
+  scroll_to: {
+    description:
+      "Scroll an element into view. Useful before interacting with elements that are off-screen.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to scroll to.",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      return dom.scrollTo({ selector: args.selector as string });
+    },
+  },
+
+  focus: {
+    description: "Focus an element (input, button, link, etc.).",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to focus.",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      return dom.focus({ selector: args.selector as string });
+    },
+  },
+
+  hover: {
+    description:
+      "Hover over an element, triggering mouseenter/mouseover events. Useful for revealing tooltips, dropdown menus, or hover states.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to hover over.",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      return dom.hover({ selector: args.selector as string });
+    },
+  },
+
+  wait_for_selector: {
+    description:
+      "Wait for an element matching a CSS selector to appear in the DOM. Useful after clicking a button that loads new content.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector to wait for.",
+        },
+        timeoutMs: {
+          type: "number",
+          description: "Maximum time to wait in milliseconds (default: 5000).",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      return dom.waitForSelector({ selector: args.selector as string, timeoutMs: args.timeoutMs as number });
+    },
+  },
+
+  type_text: {
+    description:
+      "Type text character-by-character into an element, dispatching individual key events. Use this instead of 'fill' when the page listens for keydown/keyup events (e.g. autocomplete, search-as-you-type).",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to type into.",
+        },
+        text: {
+          type: "string",
+          description: "The text to type.",
+        },
+        delayMs: {
+          type: "number",
+          description: "Delay between keystrokes in milliseconds (default: 50).",
+        },
+      },
+      required: ["selector", "text"],
+    },
+    async execute(args) {
+      return dom.typeText({ selector: args.selector as string, text: args.text as string, delayMs: args.delayMs as number });
+    },
+  },
+
+  press_key: {
+    description:
+      "Press a specific key on an element. Useful for Enter to submit, Escape to close, Tab to move focus, arrow keys for navigation, etc.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to receive the key event.",
+        },
+        key: {
+          type: "string",
+          description: "The key to press (e.g. 'Enter', 'Escape', 'Tab', 'ArrowDown', 'a', ' ').",
+        },
+      },
+      required: ["selector", "key"],
+    },
+    async execute(args) {
+      return dom.pressKey({ selector: args.selector as string, key: args.key as string });
     },
   },
 };
