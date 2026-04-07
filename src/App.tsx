@@ -129,6 +129,10 @@ function AppInner({
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarSkills = useMemo(
+    () => skills.filter((s) => !s.urlPatterns || s.urlPatterns.length === 0),
+    [skills],
+  );
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -172,7 +176,7 @@ function AppInner({
           <WidgetThreadDrawer
             open={drawerOpen}
             onClose={() => setDrawerOpen(false)}
-            skills={skills}
+            skills={sidebarSkills}
             onSkillClick={onActivateSkill}
             onNewSkill={onNewSkill}
           />
@@ -180,7 +184,7 @@ function AppInner({
       ) : (
         <div className="grid h-dvh grid-cols-[260px_1fr]">
           <ThreadList
-            skills={skills}
+            skills={sidebarSkills}
             onSkillClick={onActivateSkill}
             onNewSkill={onNewSkill}
           />
