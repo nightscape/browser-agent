@@ -8,6 +8,30 @@ export interface SkillVariable {
   choices?: string[];
 }
 
+export interface PageObjectElement {
+  selector: string;
+}
+
+export interface PageObjectStep {
+  click?: string;
+  fill?: string;
+  with?: string;
+  select?: string;
+  option?: string;
+  press?: string;
+  on?: string;
+  hover?: string;
+  wait_for?: string;
+  timeout?: number;
+  read?: string;
+}
+
+export interface PageObjectAction {
+  description: string;
+  parameters?: Array<Record<string, string>>;
+  steps: PageObjectStep[];
+}
+
 export interface SkillDefinition {
   name: string;
   category?: string;
@@ -18,6 +42,8 @@ export interface SkillDefinition {
   variables: SkillVariable[];
   template: string;
   source: "server" | "user";
+  elements?: Record<string, PageObjectElement>;
+  actions?: Record<string, PageObjectAction>;
 }
 
 /**

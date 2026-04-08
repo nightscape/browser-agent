@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, basename, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { SkillDefinition, VariableRegistry } from "../shared/skills.js";
+import type { SkillDefinition, VariableRegistry, PageObjectElement, PageObjectAction, PageObjectStep } from "../shared/skills.js";
 import { parseVariables } from "../shared/skills.js";
 import { loadEnvConfig } from "./env-config.js";
 
@@ -26,6 +26,13 @@ export function parseSkillFile(name: string, content: string, category?: string,
   const urlPatterns = toPatternArray(frontmatter.url);
   const titlePatterns = toPatternArray(frontmatter.title);
 
+  const elements = frontmatter.elements as Record<string, PageObjectElement> | undefined;
+  const actions = frontmatter.actions as Record<string, PageObjectAction> | undefined;
+
+  if (elements && actions) {
+    validateElementRefs(name, elements, actions);
+  }
+
   return {
     name,
     category,
@@ -36,6 +43,8 @@ export function parseSkillFile(name: string, content: string, category?: string,
     variables: parseVariables(template, registry),
     template,
     source: "server",
+    elements,
+    actions,
   };
 }
 
@@ -94,4 +103,27 @@ export async function loadSkill(name: string): Promise<SkillDefinition> {
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+const STEP_REF_KEYS: (keyof PageObjectStep)[] = ["click", "fill", "select", "on", "hover", "wait_for", "read"];
+
+function validateElementRefs(
+  skillName: string,
+  elements: Record<string, PageObjectElement>,
+  actions: Record<string, PageObjectAction>,
+): void {
+  for (const [actionName, action] of Object.entries(actions)) {
+    for (const step of action.steps) {
+      for (const key of STEP_REF_KEYS) {
+        const ref = step[key];
+        if (typeof ref !== "string") continue;
+        // If it looks like a CSS selector (contains special chars), skip validation
+        if (/[#.\[: >+~=]/.test(ref)) continue;
+        assert(
+          ref in elements,
+          `Skill "${skillName}" action "${actionName}": step references unknown element "${ref}"`,
+        );
+      }
+    }
+  }
 }

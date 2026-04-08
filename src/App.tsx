@@ -31,6 +31,7 @@ import { collectGlobalVariables, skillMatchesPage, expandTemplate } from "../sha
 import { listUserSkills, saveUserSkill } from "./storage/skills";
 import { useMcpTools } from "./use-mcp-tools";
 import { useBrowserTools } from "./use-browser-tools";
+import { usePageObjectTools } from "./use-page-object-tools";
 import { WidgetProvider, useWidgetMode } from "./widget-mode";
 import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
 import { useSystemPrompt } from "./use-system-prompt";
@@ -76,6 +77,12 @@ function McpToolsBridge({ settings, predefinedMcpServers }: { settings: Settings
 
 function BrowserToolsBridge() {
   useBrowserTools();
+  return null;
+}
+
+function PageObjectToolsBridge({ skills }: { skills: SkillDefinition[] }) {
+  const { pageContext } = useWidgetMode();
+  usePageObjectTools(skills, pageContext?.url);
   return null;
 }
 
@@ -167,6 +174,7 @@ function AppInner({
       <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} urlContext={urlContext} />
       <McpToolsBridge settings={settings} predefinedMcpServers={predefinedMcpServers} />
       <BrowserToolsBridge />
+      <PageObjectToolsBridge skills={skills} />
       <SkillMessageBridge sendRef={sendRef} />
       {isWidget ? (
         <div className="flex h-dvh flex-col">
