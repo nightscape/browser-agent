@@ -10,6 +10,7 @@ import {
   getFullToolResultParsed,
 } from "./storage/tool-results";
 import { inferCompactSchema } from "./schema-inference";
+import { setMcpTools, type McpToolInfo } from "./mcp-tool-registry";
 
 interface McpToolDef {
   name: string;
@@ -137,6 +138,15 @@ export function useMcpTools(
 
   const agentToolsKey = agentTools?.sort().join(",") ?? "";
 
+  const disabledKey = useMemo(() => {
+    const d = settings.disabledMcpTools;
+    if (!d) return "";
+    return Object.entries(d)
+      .map(([k, v]) => `${k}:${v.sort().join("+")}`)
+      .sort()
+      .join("|");
+  }, [settings.disabledMcpTools]);
+
   useEffect(() => {
     if (!serversKey) return;
 
@@ -196,6 +206,17 @@ export function useMcpTools(
       if (ac.signal.aborted) return;
       clientsRef.current = [...clientsByServer.values()];
 
+      // Publish discovered tools to the registry (for UI)
+      const discoveredTools: McpToolInfo[] = Object.entries(allTools).map(
+        ([qualifiedName, { serverName, toolName, def }]) => ({
+          serverName,
+          toolName,
+          qualifiedName,
+          description: def.description,
+        }),
+      );
+      setMcpTools(discoveredTools);
+
       // Apply agent tool filter
       let toolEntries = Object.entries(allTools);
       if (agentTools && agentTools.length > 0) {
@@ -204,6 +225,15 @@ export function useMcpTools(
         );
         toolEntries = toolEntries.filter(([name]) => allowedSet.has(name));
       }
+
+      // Apply user-disabled tool filter
+      const disabled = settingsRef.current.disabledMcpTools ?? {};
+      toolEntries = toolEntries.filter(([, { serverName, toolName }]) => {
+        const serverDisabled = disabled[serverName];
+        if (!serverDisabled) return true;
+        if (serverDisabled.includes("*")) return false;
+        return !serverDisabled.includes(toolName);
+      });
 
       // Register all MCP tools + synthetic _get_full_result tool
       const toolRecord: Record<
@@ -351,6 +381,7 @@ export function useMcpTools(
       ac.abort();
       unregister?.();
       clientsRef.current = [];
+      setMcpTools([]);
     };
-  }, [aui, serversKey, agentToolsKey]);
+  }, [aui, serversKey, agentToolsKey, disabledKey]);
 }

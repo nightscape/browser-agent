@@ -3,6 +3,7 @@ import {
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
+  ErrorPrimitive,
   useComposerRuntime,
   useMessage,
   useThreadRuntime,
@@ -20,6 +21,7 @@ import {
 interface ThreadProps {
   skills: SkillDefinition[];
   onActivateSkill: (skillName: string) => void;
+  onOpenToolFilter?: () => void;
 }
 
 const DownloadIcon = () => (
@@ -132,6 +134,11 @@ const AssistantMessage = () => (
           tools: { Fallback: ToolFallback },
         }}
       />
+      <MessagePrimitive.Error>
+        <div className="mt-2 rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+          <ErrorPrimitive.Message />
+        </div>
+      </MessagePrimitive.Error>
     </div>
     <div className="flex shrink-0 flex-col pt-2">
       <MessageMarkdownButton />
@@ -182,7 +189,7 @@ function SkillAutocomplete({
   );
 }
 
-function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void }) {
+function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void; onOpenToolFilter?: () => void }) {
   const composerRuntime = useComposerRuntime();
   const [inputValue, setInputValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -261,6 +268,18 @@ function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onAc
           onKeyDown={handleKeyDown}
         />
       </div>
+      {onOpenToolFilter && (
+        <button
+          type="button"
+          onClick={onOpenToolFilter}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
+          title="Filter MCP tools"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path fillRule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 8 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L2.659 6.22A2.25 2.25 0 0 1 2 4.629V2.34a.75.75 0 0 1 .628-.74Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
       <ComposerPrimitive.Send className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-500 disabled:opacity-40">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -297,7 +316,7 @@ export function ConversationMarkdownButton({ className }: { className?: string }
   );
 }
 
-export function Thread({ skills, onActivateSkill }: ThreadProps) {
+export function Thread({ skills, onActivateSkill, onOpenToolFilter }: ThreadProps) {
   return (
     <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -319,7 +338,7 @@ export function Thread({ skills, onActivateSkill }: ThreadProps) {
           />
         </div>
       </ThreadPrimitive.Viewport>
-      <Composer skills={skills} onActivateSkill={onActivateSkill} />
+      <Composer skills={skills} onActivateSkill={onActivateSkill} onOpenToolFilter={onOpenToolFilter} />
     </ThreadPrimitive.Root>
   );
 }

@@ -17,6 +17,8 @@ export interface Settings {
   templateVars: Record<string, string>;
   theme: Theme;
   temperature?: number;
+  /** Server name -> list of disabled tool names. If list contains "*", entire server is disabled. */
+  disabledMcpTools?: Record<string, string[]>;
 }
 
 const DEFAULT_SETTINGS: Settings = {

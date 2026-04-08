@@ -34,6 +34,7 @@ import { useBrowserTools } from "./use-browser-tools";
 import { WidgetProvider, useWidgetMode } from "./widget-mode";
 import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
 import { useSystemPrompt } from "./use-system-prompt";
+import { ToolFilterDialog } from "./components/ToolFilterDialog";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -115,6 +116,7 @@ function AppInner({
   onNewSkill,
   onOpenSettings,
   onOpenExportImport,
+  onOpenToolFilter,
   sendRef,
 }: {
   settings: Settings;
@@ -127,6 +129,7 @@ function AppInner({
   onNewSkill: () => void;
   onOpenSettings: () => void;
   onOpenExportImport: () => void;
+  onOpenToolFilter: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
 }) {
   const { isWidget } = useWidgetMode();
@@ -173,7 +176,7 @@ function AppInner({
           />
           <PageContextBar />
           <div className="flex-1 overflow-hidden">
-            <Thread skills={skills} onActivateSkill={onActivateSkill} />
+            <Thread skills={skills} onActivateSkill={onActivateSkill} onOpenToolFilter={onOpenToolFilter} />
           </div>
           <WidgetThreadDrawer
             open={drawerOpen}
@@ -216,6 +219,7 @@ function AppInner({
             <Thread
               skills={skills}
               onActivateSkill={onActivateSkill}
+              onOpenToolFilter={onOpenToolFilter}
             />
           </div>
         </div>
@@ -237,6 +241,7 @@ function AppRoot() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
+  const [showToolFilter, setShowToolFilter] = useState(false);
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [predefinedMcpServers, setPredefinedMcpServers] = useState<
     Record<string, PredefinedMcpServer>
@@ -384,6 +389,7 @@ function AppRoot() {
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}
           onOpenExportImport={() => setShowExportImport(true)}
+          onOpenToolFilter={() => setShowToolFilter(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
         />
@@ -417,6 +423,17 @@ function AppRoot() {
             setSettings(updated);
           }}
           onClose={() => setShowExportImport(false)}
+        />
+      )}
+
+      {showToolFilter && (
+        <ToolFilterDialog
+          settings={settings}
+          onSave={async (updated) => {
+            await saveSettings(updated);
+            setSettings(updated);
+          }}
+          onClose={() => setShowToolFilter(false)}
         />
       )}
 

@@ -242,15 +242,20 @@ app.post("/api/chat", async (c) => {
 
   const modelMessages = await convertToModelMessages(messages);
 
-  const result = streamText({
-    model,
-    system,
-    messages: modelMessages,
-    tools,
-    temperature,
-  });
+  try {
+    const result = streamText({
+      model,
+      system,
+      messages: modelMessages,
+      tools,
+      temperature,
+    });
 
-  return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 500);
+  }
 });
 
 // ── MCP CORS proxy ──────────────────────────────────────────────────────

@@ -44,7 +44,13 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
   path.setAttribute("d", "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z");
   svg.appendChild(path);
   fab.appendChild(svg);
-  fab.addEventListener("click", toggle);
+  fab.addEventListener("click", (e: MouseEvent) => {
+    if (e.shiftKey) {
+      openPopup();
+    } else {
+      toggle();
+    }
+  });
   fab.addEventListener("mouseenter", () => (fab.style.transform = "scale(1.08)"));
   fab.addEventListener("mouseleave", () => (fab.style.transform = ""));
   document.body.appendChild(fab);
@@ -376,6 +382,17 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
       result = `Unknown DOM method: ${method}`;
     }
     sendToTarget({ type: "sensai:dom-result", requestId, result });
+  }
+
+  // ── Open as popup (Shift+Click) ──────────────────────────────────────────
+  function openPopup(): void {
+    switchToPopup();
+    if (popup && !popup.closed) {
+      popup.focus();
+    } else {
+      popup = window.open(widgetUrl, "sensai", "width=400,height=560");
+    }
+    sendToTarget({ type: "sensai:context", context: getPageContext() });
   }
 
   // ── Toggle ───────────────────────────────────────────────────────────────
