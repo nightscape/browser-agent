@@ -10,7 +10,7 @@ import {
   AssistantChatTransport,
 } from "@assistant-ui/react-ai-sdk";
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
-import { Thread } from "./components/Thread";
+import { Thread, ConversationMarkdownButton } from "./components/Thread";
 import { ThreadList } from "./components/ThreadList";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExportImportDialog } from "./components/ExportImportDialog";
@@ -114,6 +114,7 @@ function AppInner({
   onActivateSkill,
   onNewSkill,
   onOpenSettings,
+  onOpenExportImport,
   sendRef,
 }: {
   settings: Settings;
@@ -125,6 +126,7 @@ function AppInner({
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
   onOpenSettings: () => void;
+  onOpenExportImport: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
 }) {
   const { isWidget } = useWidgetMode();
@@ -188,10 +190,34 @@ function AppInner({
             onSkillClick={onActivateSkill}
             onNewSkill={onNewSkill}
           />
-          <Thread
-            skills={skills}
-            onActivateSkill={onActivateSkill}
-          />
+          <div className="relative">
+            <div className="absolute right-4 top-3 z-10 flex gap-1">
+              <ConversationMarkdownButton />
+              <button
+                onClick={onOpenExportImport}
+                className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+                title="Export / Import"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                </svg>
+              </button>
+              <button
+                onClick={onOpenSettings}
+                className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+                title="Settings"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path fillRule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            <Thread
+              skills={skills}
+              onActivateSkill={onActivateSkill}
+            />
+          </div>
         </div>
       )}
     </AssistantRuntimeProvider>
@@ -348,43 +374,6 @@ function AppRoot() {
   return (
     <>
       <div className="relative h-dvh">
-        {!isWidget && (
-          <div className="absolute right-4 top-3 z-10 flex gap-1">
-          <button
-            onClick={() => setShowExportImport(true)}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
-            title="Export / Import"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="h-5 w-5"
-            >
-              <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-              <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
-            title="Settings"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="h-5 w-5"
-            >
-              <path
-                fillRule="evenodd"
-                d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
-          </div>
-        )}
         <AppInner
           settings={settings}
           agents={agents}
@@ -394,6 +383,7 @@ function AppRoot() {
           urlContext={urlContext}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenExportImport={() => setShowExportImport(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
         />

@@ -4,19 +4,53 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   useComposerRuntime,
+  useMessage,
+  useThreadRuntime,
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
+import {
+  messageToMarkdown,
+  conversationToMarkdown,
+  downloadMarkdown,
+} from "../markdown-export";
 
 interface ThreadProps {
   skills: SkillDefinition[];
   onActivateSkill: (skillName: string) => void;
 }
 
+const DownloadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+    <path d="M8.75 1.75a.75.75 0 0 0-1.5 0v6.59L5.03 6.12a.75.75 0 0 0-1.06 1.06l3.5 3.5a.75.75 0 0 0 1.06 0l3.5-3.5a.75.75 0 0 0-1.06-1.06L8.75 8.34V1.75Z" />
+    <path d="M2.75 10a.75.75 0 0 0-1.5 0v2.25A2.75 2.75 0 0 0 4 15h8a2.75 2.75 0 0 0 2.75-2.75V10a.75.75 0 0 0-1.5 0v2.25c0 .69-.56 1.25-1.25 1.25H4c-.69 0-1.25-.56-1.25-1.25V10Z" />
+  </svg>
+);
+
+function MessageMarkdownButton() {
+  const message = useMessage();
+  return (
+    <button
+      className="rounded p-1 text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-neutral-300 group-hover/msg:opacity-100"
+      title="Export as Markdown"
+      onClick={() => {
+        const md = messageToMarkdown(message);
+        const date = new Date().toISOString().slice(0, 10);
+        downloadMarkdown(`sensai-reply-${date}.md`, md);
+      }}
+    >
+      <DownloadIcon />
+    </button>
+  );
+}
+
 const UserMessage = () => (
-  <MessagePrimitive.Root className="mb-4 flex justify-end">
+  <MessagePrimitive.Root className="group/msg mb-4 flex justify-end gap-1 items-start">
+    <div className="flex shrink-0 flex-col pt-2">
+      <MessageMarkdownButton />
+    </div>
     <div className="max-w-[80%] rounded-2xl bg-blue-600 px-4 py-2.5 text-white">
       <MessagePrimitive.Content />
     </div>
@@ -90,7 +124,7 @@ const ToolFallback: ToolCallMessagePartComponent = ({
 };
 
 const AssistantMessage = () => (
-  <MessagePrimitive.Root className="mb-4">
+  <MessagePrimitive.Root className="group/msg mb-4 flex gap-1 items-start">
     <div className="max-w-[80%] rounded-2xl bg-neutral-800 px-4 py-2.5 text-neutral-100 prose dark:prose-invert prose-sm max-w-none">
       <MessagePrimitive.Parts
         components={{
@@ -98,6 +132,9 @@ const AssistantMessage = () => (
           tools: { Fallback: ToolFallback },
         }}
       />
+    </div>
+    <div className="flex shrink-0 flex-col pt-2">
+      <MessageMarkdownButton />
     </div>
   </MessagePrimitive.Root>
 );
@@ -235,6 +272,28 @@ function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onAc
         </svg>
       </ComposerPrimitive.Send>
     </ComposerPrimitive.Root>
+  );
+}
+
+export function ConversationMarkdownButton({ className }: { className?: string }) {
+  const threadRuntime = useThreadRuntime();
+  return (
+    <button
+      className={className ?? "rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"}
+      title="Export conversation as Markdown"
+      onClick={() => {
+        const state = threadRuntime.getState();
+        const messages = state.messages;
+        if (messages.length === 0) return;
+        const md = conversationToMarkdown(undefined, messages);
+        const date = new Date().toISOString().slice(0, 10);
+        downloadMarkdown(`sensai-conversation-${date}.md`, md);
+      }}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+        <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" clipRule="evenodd" />
+      </svg>
+    </button>
   );
 }
 

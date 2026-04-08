@@ -1,4 +1,5 @@
 import { useAui } from "@assistant-ui/react";
+import { ConversationMarkdownButton } from "./Thread";
 
 interface Props {
   onToggleThreadList: () => void;
@@ -30,6 +31,7 @@ export function WidgetHeader({ onToggleThreadList, onOpenSettings }: Props) {
       </button>
       <span className="text-sm font-semibold text-neutral-200">SensAI</span>
       <div className="flex items-center gap-0.5">
+        <ConversationMarkdownButton className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200" />
         <button
           onClick={openInNewTab}
           className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
