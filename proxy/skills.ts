@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, basename, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { SkillDefinition, VariableRegistry, PageObjectElement, PageObjectAction, PageObjectStep } from "../shared/skills.js";
@@ -73,15 +73,21 @@ export async function listSkills(): Promise<SkillSummary[]> {
   const skills: SkillSummary[] = [];
 
   for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith(".md")) {
+    // Skip K8s ConfigMap internal entries (..data, ..timestamp dirs) and other hidden entries
+    if (entry.name.startsWith(".")) continue;
+
+    const entryPath = join(SKILLS_DIR, entry.name);
+    const entryStat = await stat(entryPath); // follows symlinks, unlike Dirent methods
+
+    if (entryStat.isFile() && entry.name.endsWith(".md")) {
       const name = basename(entry.name, ".md");
       const skill = await loadSkill(name);
       skills.push({ name: skill.name, description: skill.description, urlPatterns: skill.urlPatterns, titlePatterns: skill.titlePatterns });
-    } else if (entry.isDirectory()) {
+    } else if (entryStat.isDirectory()) {
       const category = entry.name;
       const subFiles = await readdir(join(SKILLS_DIR, category));
       for (const file of subFiles) {
-        if (!file.endsWith(".md")) continue;
+        if (file.startsWith(".") || !file.endsWith(".md")) continue;
         const name = `${category}/${basename(file, ".md")}`;
         const skill = await loadSkill(name);
         skills.push({ name: skill.name, description: skill.description, category, urlPatterns: skill.urlPatterns, titlePatterns: skill.titlePatterns });
