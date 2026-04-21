@@ -46,7 +46,8 @@
  *   a description (shown to the LLM), optional parameters, and ordered steps.
  *
  * - **Steps**: Individual page interactions. Supported types:
- *     click, fill+with, select+option, press+on, hover, wait_for, read
+ *     click, fill+with, select+option, press+on, hover, wait_for, read,
+ *     for_each+as+steps (iteration over object/array parameters)
  *
  * - **Parameter substitution**: Step values can reference action parameters via
  *   ${paramName} syntax. Substitution happens at execution time.
@@ -65,7 +66,9 @@ import {
   widgetLocators,
 } from "./fixtures";
 import { parseSkillFile } from "../proxy/skills";
-import { resolveSelector, substituteParams } from "../src/page-object-executor";
+import { resolveSelector, substituteParams, executeAction } from "../src/page-object-executor";
+import type { DomProxy } from "../src/widget/dom-types";
+import type { PageObjectAction } from "../shared/skills";
 
 // Test page HTML and sample skill YAML live in separate files for readability.
 // See tests/fixtures/page-object-test.html and tests/fixtures/page-object-test-skill.md.
@@ -294,6 +297,255 @@ elements:
 Template referencing the page.
 `;
     expect(() => parseSkillFile("elems-only", skill)).not.toThrow();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 2b. for_each — YAML parsing and executor unit tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe("for_each — YAML parsing", () => {
+  test("parses for_each with nested steps from frontmatter", () => {
+    const skill = parseSkillFile("fe-test", `---
+description: "Form filler"
+url: http://example.com/**
+elements:
+  save_btn:
+    selector: "#save"
+actions:
+  fill_form:
+    description: "Fill a dynamic form"
+    parameters:
+      - fields: object
+    steps:
+      - for_each: "\${fields}"
+        as: [fieldName, fieldValue]
+        steps:
+          - fill: "tr:has-text('\${fieldName}') input"
+            with: "\${fieldValue}"
+      - click: save_btn
+---
+Template
+`);
+    const action = skill.actions!["fill_form"]!;
+    expect(action.parameters).toEqual([{ fields: "object" }]);
+    expect(action.steps).toHaveLength(2);
+
+    const loop = action.steps[0]!;
+    expect(loop.for_each).toBe("${fields}");
+    expect(loop.as).toEqual(["fieldName", "fieldValue"]);
+    expect(loop.steps).toHaveLength(1);
+    expect(loop.steps![0]).toEqual({
+      fill: "tr:has-text('${fieldName}') input",
+      with: "${fieldValue}",
+    });
+
+    expect(action.steps[1]).toEqual({ click: "save_btn" });
+  });
+
+  test("validates element refs inside for_each nested steps", () => {
+    const badSkill = `---
+description: "Bad"
+elements:
+  btn:
+    selector: "#btn"
+actions:
+  do_thing:
+    description: "Does a thing"
+    parameters:
+      - items: array
+    steps:
+      - for_each: "\${items}"
+        as: [item]
+        steps:
+          - click: nonexistent_element
+---
+Template
+`;
+    expect(() => parseSkillFile("bad", badSkill)).toThrow(/unknown element "nonexistent_element"/);
+  });
+
+  test("skips validation for selectors with ${} inside for_each", () => {
+    const skill = `---
+description: "Dynamic selectors"
+elements:
+  btn:
+    selector: "#btn"
+actions:
+  do_thing:
+    description: "Does a thing"
+    parameters:
+      - items: array
+    steps:
+      - for_each: "\${items}"
+        as: [item]
+        steps:
+          - click: "\${item}"
+---
+Template
+`;
+    expect(() => parseSkillFile("dyn", skill)).not.toThrow();
+  });
+});
+
+test.describe("for_each — executor with mock DomProxy", () => {
+  function mockDom(): DomProxy & { calls: Array<{ method: string; args: Record<string, unknown> }> } {
+    const calls: Array<{ method: string; args: Record<string, unknown> }> = [];
+    const handler: ProxyHandler<object> = {
+      get(_target, prop: string) {
+        if (prop === "calls") return calls;
+        return (args: Record<string, unknown>) => {
+          calls.push({ method: prop, args });
+          return Promise.resolve(`${prop}: ok`);
+        };
+      },
+    };
+    return new Proxy({}, handler) as DomProxy & { calls: Array<{ method: string; args: Record<string, unknown> }> };
+  }
+
+  test("iterates over an object, binding key and value", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "fill form",
+      parameters: [{ fields: "object" }],
+      steps: [{
+        for_each: "${fields}",
+        as: ["fieldName", "fieldValue"],
+        steps: [
+          { fill: "tr:has-text('${fieldName}') input", with: "${fieldValue}" },
+        ],
+      }],
+    };
+
+    const results = await executeAction(action, {}, {
+      fields: { Name: "Alice", Email: "alice@example.com" },
+    }, dom);
+
+    expect(dom.calls).toEqual([
+      { method: "fill", args: { selector: "tr:has-text('Name') input", value: "Alice" } },
+      { method: "fill", args: { selector: "tr:has-text('Email') input", value: "alice@example.com" } },
+    ]);
+    expect(results).toHaveLength(1);
+  });
+
+  test("iterates over an array, binding item and index", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "click rows",
+      parameters: [{ selectors: "array" }],
+      steps: [{
+        for_each: "${selectors}",
+        as: ["sel"],
+        steps: [
+          { click: "${sel}" },
+        ],
+      }],
+    };
+
+    await executeAction(action, {}, {
+      selectors: ["#row-1 .btn", "#row-2 .btn"],
+    }, dom);
+
+    expect(dom.calls).toEqual([
+      { method: "click", args: { selector: "#row-1 .btn" } },
+      { method: "click", args: { selector: "#row-2 .btn" } },
+    ]);
+  });
+
+  test("multiple nested steps per iteration", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "fill and tab",
+      parameters: [{ fields: "object" }],
+      steps: [{
+        for_each: "${fields}",
+        as: ["name", "val"],
+        steps: [
+          { fill: "#field-${name}", with: "${val}" },
+          { press: "Tab", on: "#field-${name}" },
+        ],
+      }],
+    };
+
+    await executeAction(action, {}, {
+      fields: { a: "1", b: "2" },
+    }, dom);
+
+    expect(dom.calls).toEqual([
+      { method: "fill", args: { selector: "#field-a", value: "1" } },
+      { method: "pressKey", args: { selector: "#field-a", key: "Tab" } },
+      { method: "fill", args: { selector: "#field-b", value: "2" } },
+      { method: "pressKey", args: { selector: "#field-b", key: "Tab" } },
+    ]);
+  });
+
+  test("as-bindings don't leak to subsequent steps", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "scoped test",
+      parameters: [{ items: "array" }],
+      steps: [
+        {
+          for_each: "${items}",
+          as: ["item"],
+          steps: [{ click: "#${item}" }],
+        },
+        { click: "#after-${item}" },
+      ],
+    };
+
+    await executeAction(action, {}, {
+      items: ["a"],
+    }, dom);
+
+    expect(dom.calls[0]).toEqual({ method: "click", args: { selector: "#a" } });
+    // ${item} is not defined in the outer scope, so it substitutes to empty string
+    expect(dom.calls[1]).toEqual({ method: "click", args: { selector: "#after-" } });
+  });
+
+  test("throws when for_each target is not an object or array", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "bad target",
+      steps: [{
+        for_each: "${x}",
+        as: ["item"],
+        steps: [{ click: "${item}" }],
+      }],
+    };
+
+    await expect(executeAction(action, {}, { x: "a string" }, dom))
+      .rejects.toThrow(/must be an object or array/);
+  });
+
+  test("throws when for_each value is not a ${param} reference", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "bad ref",
+      steps: [{
+        for_each: "literal",
+        as: ["item"],
+        steps: [{ click: "${item}" }],
+      }],
+    };
+
+    await expect(executeAction(action, {}, {}, dom))
+      .rejects.toThrow(/must be a \$\{paramName\} reference/);
+  });
+
+  test("throws when as binding is missing", async () => {
+    const dom = mockDom();
+    const action: PageObjectAction = {
+      description: "no as",
+      steps: [{
+        for_each: "${items}",
+        steps: [{ click: "#x" }],
+      }],
+    };
+
+    await expect(executeAction(action, {}, { items: ["a"] }, dom))
+      .rejects.toThrow(/requires an as binding/);
   });
 });
 

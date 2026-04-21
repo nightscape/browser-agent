@@ -11,7 +11,15 @@ function buildJsonSchema(action: PageObjectAction): Record<string, unknown> {
   const required: string[] = [];
   for (const paramDef of action.parameters ?? []) {
     for (const [name, type] of Object.entries(paramDef)) {
-      properties[name] = { type: type === "number" ? "number" : "string" };
+      if (type === "number") {
+        properties[name] = { type: "number" };
+      } else if (type === "object") {
+        properties[name] = { type: "object", additionalProperties: { type: "string" } };
+      } else if (type === "array") {
+        properties[name] = { type: "array", items: { type: "string" } };
+      } else {
+        properties[name] = { type: "string" };
+      }
       required.push(name);
     }
   }

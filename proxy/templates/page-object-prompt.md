@@ -64,9 +64,55 @@ Prompt template for the LLM assistant.
 | hover | `- hover: selector_or_element` | Hover over an element |
 | wait_for | `- wait_for: selector_or_element`<br>`  timeout: 5000` | Wait for element to appear |
 | read | `- read: selector_or_element` | Read text content |
+| for_each | `- for_each: "${paramName}"`<br>`  as: [key, value]`<br>`  steps:`<br>`    - fill: ...` | Iterate over object/array |
 
 Steps can reference named elements (from the `elements:` block) or use CSS/Playwright selectors directly.
 Parameters use `${paramName}` syntax and are substituted at runtime.
+
+**Parameter types:** `string` (default), `number`, `object` (dict of strings), `array` (list of strings).
+
+**`for_each` — iterate over a parameter:**
+
+Use `for_each` to repeat nested steps for each entry in an `object` or `array` parameter.
+
+- **Object iteration:** `as: [keyVar, valueVar]` — binds each entry's key and value.
+- **Array iteration:** `as: [itemVar]` — binds each item. Use `as: [itemVar, indexVar]` to also bind the index.
+
+The `as` bindings are scoped to the nested steps and don't leak to subsequent steps.
+
+Example — fill a dynamic form where field names aren't known upfront:
+
+```yaml
+actions:
+  fill_form:
+    description: "Fill form fields dynamically"
+    parameters:
+      - fields: object
+    steps:
+      - for_each: "${fields}"
+        as: [fieldName, fieldValue]
+        steps:
+          - fill: "tr:has-text('${fieldName}') input"
+            with: "${fieldValue}"
+      - click: save_btn
+```
+
+Example — click a list of buttons by selector:
+
+```yaml
+actions:
+  approve_all:
+    description: "Approve items by clicking their buttons"
+    parameters:
+      - selectors: array
+    steps:
+      - for_each: "${selectors}"
+        as: [sel]
+        steps:
+          - click: "${sel}"
+```
+
+Note: for array iteration, `as: [item, index]` gives a 0-based index.
 
 ### Step 4: Test it
 

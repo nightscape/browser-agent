@@ -42,7 +42,11 @@ function sensaiPageObject(input) {
     const required = [];
     for (const p of params) {
       const key = Object.keys(p)[0];
-      properties[key] = { type: "string" };
+      const typ = p[key];
+      if (typ === "number") properties[key] = { type: "number" };
+      else if (typ === "object") properties[key] = { type: "object", additionalProperties: { type: "string" } };
+      else if (typ === "array") properties[key] = { type: "array", items: { type: "string" } };
+      else properties[key] = { type: "string" };
       required.push(key);
     }
     return {
@@ -58,6 +62,7 @@ function sensaiPageObject(input) {
   function r(ref, p) { return sub(sel(ref), p); }
 
   function stepDesc(s) {
+    if (s.for_each) return "for_each " + s.for_each + " as [" + (s.as || []).join(", ") + "] (" + (s.steps || []).length + " steps)";
     if (s.click) return "click \"" + s.click + "\"";
     if (s.fill) return "fill \"" + s.fill + "\" with \"" + s.with + "\"";
     if (s.select) return "select \"" + s.option + "\" in \"" + s.select + "\"";
@@ -69,6 +74,38 @@ function sensaiPageObject(input) {
   }
 
   async function execStep(page, step, p) {
+    if (step.for_each) {
+      var m = step.for_each.match(/^\$\{(\w+)\}$/);
+      if (!m) throw new Error("for_each value must be a ${paramName} reference");
+      if (!step.steps || !step.steps.length) throw new Error("for_each requires a non-empty steps array");
+      if (!step.as || !step.as.length) throw new Error("for_each requires an as binding");
+      var iterable = p[m[1]];
+      var bindings = step.as;
+      var results = [];
+      if (Array.isArray(iterable)) {
+        for (var idx = 0; idx < iterable.length; idx++) {
+          var sp = Object.assign({}, p);
+          sp[bindings[0]] = iterable[idx];
+          if (bindings[1]) sp[bindings[1]] = idx;
+          for (var ns = 0; ns < step.steps.length; ns++) {
+            results.push(await execStep(page, step.steps[ns], sp));
+          }
+        }
+      } else if (typeof iterable === "object" && iterable !== null) {
+        var entries = Object.entries(iterable);
+        for (var ei = 0; ei < entries.length; ei++) {
+          var sp = Object.assign({}, p);
+          sp[bindings[0]] = entries[ei][0];
+          if (bindings[1]) sp[bindings[1]] = entries[ei][1];
+          for (var ns = 0; ns < step.steps.length; ns++) {
+            results.push(await execStep(page, step.steps[ns], sp));
+          }
+        }
+      } else {
+        throw new Error("for_each target must be an object or array, got: " + typeof iterable);
+      }
+      return results.join("\n");
+    }
     if (step.click) {
       var s = r(step.click, p); await page.locator(s).click({ timeout: 5000 }); return "Clicked: " + s;
     }

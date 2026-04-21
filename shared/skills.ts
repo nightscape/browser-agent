@@ -24,6 +24,9 @@ export interface PageObjectStep {
   wait_for?: string;
   timeout?: number;
   read?: string;
+  for_each?: string;
+  as?: string[];
+  steps?: PageObjectStep[];
 }
 
 export interface PageObjectAction {

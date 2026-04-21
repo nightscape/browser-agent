@@ -23,12 +23,63 @@ function resolveAndSubstitute(
   return substituteParams(resolveSelector(ref, elements), params);
 }
 
+const FOR_EACH_PARAM_RE = /^\$\{(\w+)\}$/;
+
+async function executeForEach(
+  step: PageObjectStep,
+  elements: Record<string, PageObjectElement>,
+  params: Record<string, unknown>,
+  dom: DomProxy,
+): Promise<string> {
+  const paramMatch = step.for_each!.match(FOR_EACH_PARAM_RE);
+  if (!paramMatch) {
+    throw new Error(`for_each value must be a \${paramName} reference, got: ${step.for_each}`);
+  }
+  if (!step.steps?.length) {
+    throw new Error("for_each requires a non-empty steps array");
+  }
+  if (!step.as?.length) {
+    throw new Error("for_each requires an as binding");
+  }
+
+  const iterable = params[paramMatch[1]!];
+  const bindings = step.as;
+  const results: string[] = [];
+
+  if (Array.isArray(iterable)) {
+    for (let idx = 0; idx < iterable.length; idx++) {
+      const scoped: Record<string, unknown> = { ...params };
+      scoped[bindings[0]!] = iterable[idx];
+      if (bindings[1]) scoped[bindings[1]] = idx;
+      for (const nested of step.steps) {
+        results.push(await executeStep(nested, elements, scoped, dom));
+      }
+    }
+  } else if (typeof iterable === "object" && iterable !== null) {
+    for (const [key, value] of Object.entries(iterable as Record<string, unknown>)) {
+      const scoped: Record<string, unknown> = { ...params };
+      scoped[bindings[0]!] = key;
+      if (bindings[1]) scoped[bindings[1]] = value;
+      for (const nested of step.steps) {
+        results.push(await executeStep(nested, elements, scoped, dom));
+      }
+    }
+  } else {
+    throw new Error(`for_each target must be an object or array, got: ${typeof iterable}`);
+  }
+
+  return results.join("\n");
+}
+
 async function executeStep(
   step: PageObjectStep,
   elements: Record<string, PageObjectElement>,
   params: Record<string, unknown>,
   dom: DomProxy,
 ): Promise<string> {
+  if (step.for_each) {
+    return executeForEach(step, elements, params, dom);
+  }
   if (step.click) {
     const selector = resolveAndSubstitute(step.click, elements, params);
     return dom.click({ selector });

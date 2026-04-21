@@ -113,23 +113,36 @@ function assert(condition: boolean, message: string): asserts condition {
 
 const STEP_REF_KEYS: (keyof PageObjectStep)[] = ["click", "fill", "select", "on", "hover", "wait_for", "read"];
 
+function validateStepRefs(
+  skillName: string,
+  actionName: string,
+  elements: Record<string, PageObjectElement>,
+  steps: PageObjectStep[],
+): void {
+  for (const step of steps) {
+    if (step.for_each && step.steps) {
+      validateStepRefs(skillName, actionName, elements, step.steps);
+      continue;
+    }
+    for (const key of STEP_REF_KEYS) {
+      const ref = step[key];
+      if (typeof ref !== "string") continue;
+      if (/[#.\[: >+~=]/.test(ref)) continue;
+      if (/\$\{/.test(ref)) continue;
+      assert(
+        ref in elements,
+        `Skill "${skillName}" action "${actionName}": step references unknown element "${ref}"`,
+      );
+    }
+  }
+}
+
 function validateElementRefs(
   skillName: string,
   elements: Record<string, PageObjectElement>,
   actions: Record<string, PageObjectAction>,
 ): void {
   for (const [actionName, action] of Object.entries(actions)) {
-    for (const step of action.steps) {
-      for (const key of STEP_REF_KEYS) {
-        const ref = step[key];
-        if (typeof ref !== "string") continue;
-        // If it looks like a CSS selector (contains special chars), skip validation
-        if (/[#.\[: >+~=]/.test(ref)) continue;
-        assert(
-          ref in elements,
-          `Skill "${skillName}" action "${actionName}": step references unknown element "${ref}"`,
-        );
-      }
-    }
+    validateStepRefs(skillName, actionName, elements, action.steps);
   }
 }
