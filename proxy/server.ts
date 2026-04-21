@@ -123,14 +123,34 @@ p{line-height:1.6}</style></head>
 // ── Userscript (serves static file with correct server URL) ──────────────
 app.get("/sensai.user.js", async (c) => {
   const { readFile } = await import("node:fs/promises");
-  const { join, dirname } = await import("node:path");
+  const { dirname, join } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const source = await readFile(join(root, "src/widget/sensai.user.js"), "utf-8");
+  const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), "templates/sensai.user.js"), "utf-8");
   const origin = httpsOrigin(c.req.url);
   const script = source.replaceAll("__SENSAI_SERVER__", origin);
   c.header("Content-Type", "application/javascript");
   return c.body(script);
+});
+
+// ── Page Object Runner + Prompt (for Playwright MCP-based skill debugging) ──
+app.get("/page-object-runner.js", async (c) => {
+  const { readFile } = await import("node:fs/promises");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), "templates/page-object-runner.js"), "utf-8");
+  c.header("Content-Type", "application/javascript");
+  c.header("Access-Control-Allow-Origin", "*");
+  return c.body(source);
+});
+
+app.get("/page-object-prompt", async (c) => {
+  const { readFile } = await import("node:fs/promises");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), "templates/page-object-prompt.md"), "utf-8");
+  const origin = httpsOrigin(c.req.url);
+  c.header("Content-Type", "text/markdown");
+  return c.body(source.replaceAll("__SENSAI_SERVER__", origin));
 });
 
 // ── Predefined MCP servers (so frontend can display them) ───────────────
@@ -328,7 +348,8 @@ if (isDev) {
     // API, MCP, and widget routes → Hono
     const honoRoutes = url.startsWith("/api/") || url.startsWith("/mcp/")
       || url === "/health" || url === "/bookmarklet" || url === "/sensai.user.js"
-      || url === "/sensai-widget.iife.js";
+      || url === "/sensai-widget.iife.js"
+      || url === "/page-object-runner.js" || url === "/page-object-prompt";
     if (honoRoutes) {
       const headers = new Headers();
       for (const [key, val] of Object.entries(req.headers)) {

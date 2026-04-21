@@ -1,45 +1,81 @@
+/**
+ * Page Object Tools — Playwright tests & feature documentation
+ *
+ * Skills can define **elements** and **actions** in their YAML frontmatter.
+ * When the current page URL matches the skill's url pattern, each action is
+ * registered as an LLM-callable tool (prefixed `po_`).
+ *
+ * ## Skill YAML format
+ *
+ *   ---
+ *   description: "Manage users on the admin panel"
+ *   url: https://app.example.com/admin/**
+ *   elements:
+ *     username_input:
+ *       selector: "#username"
+ *     role_dropdown:
+ *       selector: "select[name='role']"
+ *     save_button:
+ *       selector: "button.save"
+ *   actions:
+ *     create_user:
+ *       description: "Create a new user"
+ *       parameters:
+ *         - name: string
+ *         - role: string
+ *       steps:
+ *         - fill: username_input
+ *           with: "${name}"
+ *         - select: role_dropdown
+ *           option: "${role}"
+ *         - click: save_button
+ *     read_status:
+ *       description: "Read the status message"
+ *       steps:
+ *         - read: "#status-bar"
+ *   ---
+ *   You are a helper for the admin panel.
+ *
+ * ## Key concepts
+ *
+ * - **Elements**: Named references to CSS selectors. Steps can use the name
+ *   instead of repeating the selector. Raw CSS selectors (containing #, ., [, etc.)
+ *   are also allowed directly in steps.
+ *
+ * - **Actions**: Named sequences of steps that become LLM tools. Each action has
+ *   a description (shown to the LLM), optional parameters, and ordered steps.
+ *
+ * - **Steps**: Individual page interactions. Supported types:
+ *     click, fill+with, select+option, press+on, hover, wait_for, read
+ *
+ * - **Parameter substitution**: Step values can reference action parameters via
+ *   ${paramName} syntax. Substitution happens at execution time.
+ *
+ * - **Validation**: At parse time, element name references in steps are validated
+ *   against the elements map. CSS selectors (containing special chars) skip this check.
+ */
+
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   SENSAI_SERVER,
   injectWidget,
   widgetLocators,
 } from "./fixtures";
 import { parseSkillFile } from "../proxy/skills";
+import { resolveSelector, substituteParams } from "../src/page-object-executor";
 
-const PAGE_OBJECT_HTML = `<!DOCTYPE html>
-<html><head><title>Page Object Test</title></head>
-<body>
-  <h1>Page Object Test Page</h1>
+// Test page HTML and sample skill YAML live in separate files for readability.
+// See tests/fixtures/page-object-test.html and tests/fixtures/page-object-test-skill.md.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PAGE_OBJECT_HTML = readFileSync(resolve(__dirname, "fixtures/page-object-test.html"), "utf-8");
+const SKILL_WITH_PAGE_OBJECTS = readFileSync(resolve(__dirname, "fixtures/page-object-test-skill.md"), "utf-8");
 
-  <form id="test-form">
-    <input id="username" name="username" type="text" placeholder="Username" />
-    <input id="email" name="email" type="email" placeholder="Email" />
-
-    <select id="role" name="role">
-      <option value="">-- Choose --</option>
-      <option value="admin">Admin</option>
-      <option value="user">User</option>
-      <option value="guest">Guest</option>
-    </select>
-
-    <button type="button" id="submit-btn"
-      onclick="document.getElementById('result').textContent = 'Submitted: ' + document.getElementById('username').value + ' / ' + document.getElementById('role').value">
-      Submit
-    </button>
-  </form>
-
-  <div id="result"></div>
-
-  <div id="hover-target" onmouseenter="this.dataset.hovered='true'">Hover me</div>
-
-  <div id="content-area">
-    <p>Here is some <strong>important</strong> text to read.</p>
-  </div>
-
-  <input id="search" type="text"
-    onkeydown="if(event.key==='Enter') document.getElementById('search-result').textContent='searched: ' + this.value" />
-  <span id="search-result"></span>
-</body></html>`;
+// ── DOM bridge helper ──────────────────────────────────────────────────────────
+// In the real app, the widget iframe sends postMessage commands to the host page,
+// which executes them on the DOM. These helpers replicate that protocol for tests.
 
 let reqCounter = 0;
 async function domRequest(page: any, method: string, args: Record<string, unknown> = {}): Promise<unknown> {
@@ -66,7 +102,8 @@ async function domRequest(page: any, method: string, args: Record<string, unknow
   );
 }
 
-// Execute a page object action by running steps via the DOM bridge
+// Mirrors the runtime page-object-executor logic: resolves element names → selectors,
+// substitutes ${param} placeholders, then dispatches each step via the DOM bridge.
 async function executePageObjectAction(
   page: any,
   elements: Record<string, { selector: string }>,
@@ -76,11 +113,11 @@ async function executePageObjectAction(
   const results: string[] = [];
 
   function resolve(ref: string): string {
-    return (elements[ref]?.selector ?? ref);
+    return resolveSelector(ref, elements);
   }
 
   function subst(str: string): string {
-    return str.replace(/\$\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ""));
+    return substituteParams(str, params);
   }
 
   for (const step of steps) {
@@ -115,7 +152,157 @@ async function executePageObjectAction(
   return results;
 }
 
-test.describe("Page object tools", () => {
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1. Pure functions — element resolution and parameter substitution
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe("resolveSelector — map element names to CSS selectors", () => {
+  const elements = {
+    username: { selector: "#username" },
+    save_btn: { selector: "button.save" },
+  };
+
+  test("returns the selector for a known element name", () => {
+    expect(resolveSelector("username", elements)).toBe("#username");
+    expect(resolveSelector("save_btn", elements)).toBe("button.save");
+  });
+
+  test("passes through raw CSS selectors unchanged (not in elements map)", () => {
+    expect(resolveSelector("#some-id", elements)).toBe("#some-id");
+    expect(resolveSelector(".some-class", elements)).toBe(".some-class");
+    expect(resolveSelector("div > span", elements)).toBe("div > span");
+  });
+
+  test("passes through unknown plain names as-is (treated as selectors)", () => {
+    expect(resolveSelector("nonexistent", elements)).toBe("nonexistent");
+  });
+});
+
+test.describe("substituteParams — replace ${name} placeholders with values", () => {
+  test("replaces a single parameter", () => {
+    expect(substituteParams("Hello ${name}", { name: "Alice" })).toBe("Hello Alice");
+  });
+
+  test("replaces multiple parameters in one string", () => {
+    expect(substituteParams("${first} ${last}", { first: "A", last: "B" })).toBe("A B");
+  });
+
+  test("coerces non-string values to strings", () => {
+    expect(substituteParams("count: ${n}", { n: 42 })).toBe("count: 42");
+  });
+
+  test("replaces missing parameters with empty string", () => {
+    expect(substituteParams("Hi ${name}", {})).toBe("Hi ");
+  });
+
+  test("leaves strings without placeholders unchanged", () => {
+    expect(substituteParams("no params here", { name: "ignored" })).toBe("no params here");
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 2. Skill YAML parsing — the frontmatter format for page object definitions
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe("Skill YAML parsing — elements and actions in frontmatter", () => {
+  // The skill YAML lives in tests/fixtures/page-object-test-skill.md.
+  // It demonstrates named elements, parameterized actions, multi-step flows,
+  // and raw CSS selectors.
+
+  test("extracts elements map from frontmatter", () => {
+    const skill = parseSkillFile("test-po", SKILL_WITH_PAGE_OBJECTS);
+    expect(skill.elements).toEqual({
+      search_input: { selector: "[data-testid='search']" },
+      submit_btn: { selector: "#submit" },
+    });
+  });
+
+  test("extracts actions with descriptions, parameters, and steps", () => {
+    const skill = parseSkillFile("test-po", SKILL_WITH_PAGE_OBJECTS);
+    expect(Object.keys(skill.actions!)).toEqual(["search", "read_results"]);
+
+    const search = skill.actions!["search"]!;
+    expect(search.description).toBe("Search for items");
+    expect(search.parameters).toEqual([{ query: "string" }]);
+    expect(search.steps).toHaveLength(2);
+    expect(search.steps[0]).toEqual({ fill: "search_input", with: "${query}" });
+    expect(search.steps[1]).toEqual({ click: "submit_btn" });
+  });
+
+  test("allows raw CSS selectors in steps (not just element names)", () => {
+    const skill = parseSkillFile("test-po", SKILL_WITH_PAGE_OBJECTS);
+    const readAction = skill.actions!["read_results"]!;
+    expect(readAction.steps[0]).toEqual({ read: "#results-area" });
+  });
+
+  test("validates element references — rejects unknown element names in steps", () => {
+    const badSkill = `---
+description: "Bad skill"
+elements:
+  btn:
+    selector: "#btn"
+actions:
+  do_thing:
+    description: "Does a thing"
+    steps:
+      - click: nonexistent_element
+---
+Template
+`;
+    expect(() => parseSkillFile("bad", badSkill)).toThrow(/unknown element "nonexistent_element"/);
+  });
+
+  test("skips validation for CSS selectors (containing #, ., [, etc.)", () => {
+    const skill = `---
+description: "CSS refs"
+elements:
+  btn:
+    selector: "#btn"
+actions:
+  click_by_css:
+    description: "Click via CSS"
+    steps:
+      - click: "#direct-css-selector"
+      - click: ".class-selector"
+      - click: "div[data-id='x']"
+---
+Template
+`;
+    expect(() => parseSkillFile("css-refs", skill)).not.toThrow();
+  });
+
+  test("skills without elements/actions parse normally", () => {
+    const simpleSkill = `---
+description: "Simple skill"
+---
+Just a template
+`;
+    const skill = parseSkillFile("simple", simpleSkill);
+    expect(skill.elements).toBeUndefined();
+    expect(skill.actions).toBeUndefined();
+  });
+
+  test("skills with elements but no actions are allowed (no validation needed)", () => {
+    const skill = `---
+description: "Elements only"
+elements:
+  logo:
+    selector: "#logo"
+---
+Template referencing the page.
+`;
+    expect(() => parseSkillFile("elems-only", skill)).not.toThrow();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3. DOM integration — executing steps against a real page via the widget bridge
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe("Step execution via DOM bridge", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("http://test-target.local/**", (route) =>
       route.fulfill({ body: PAGE_OBJECT_HTML, contentType: "text/html" }),
@@ -140,8 +327,9 @@ test.describe("Page object tools", () => {
     search_input: { selector: "#search" },
   };
 
-  test("single step: click element by name", async ({ page }) => {
-    // Fill a value first so submit shows something
+  // ── Individual step types ──────────────────────────────────────────────────
+
+  test("click — clicks an element by its named reference", async ({ page }) => {
     await domRequest(page, "fill", { selector: "#username", value: "alice" });
     const results = await executePageObjectAction(page, elements, [
       { click: "submit_btn" },
@@ -151,7 +339,7 @@ test.describe("Page object tools", () => {
     expect(text).toContain("alice");
   });
 
-  test("single step: fill with parameter substitution", async ({ page }) => {
+  test("fill + with — types a value into an input, supporting ${param} substitution", async ({ page }) => {
     const results = await executePageObjectAction(
       page,
       elements,
@@ -163,7 +351,7 @@ test.describe("Page object tools", () => {
     expect(value).toBe("bob");
   });
 
-  test("single step: select option by element name", async ({ page }) => {
+  test("select + option — picks a dropdown option by value", async ({ page }) => {
     const results = await executePageObjectAction(page, elements, [
       { select: "role_select", option: "admin" },
     ]);
@@ -172,7 +360,7 @@ test.describe("Page object tools", () => {
     expect(value).toBe("admin");
   });
 
-  test("single step: hover element", async ({ page }) => {
+  test("hover — moves the cursor over an element", async ({ page }) => {
     const results = await executePageObjectAction(page, elements, [
       { hover: "hover_target" },
     ]);
@@ -181,14 +369,14 @@ test.describe("Page object tools", () => {
     expect(hovered).toBe("true");
   });
 
-  test("single step: read text content", async ({ page }) => {
+  test("read — extracts text content from an element", async ({ page }) => {
     const results = await executePageObjectAction(page, elements, [
       { read: "content_area" },
     ]);
     expect(results[0]).toContain("important");
   });
 
-  test("single step: press key on element", async ({ page }) => {
+  test("press + on — sends a keyboard event to an element", async ({ page }) => {
     await domRequest(page, "fill", { selector: "#search", value: "hello" });
     const results = await executePageObjectAction(page, elements, [
       { press: "Enter", on: "search_input" },
@@ -198,21 +386,23 @@ test.describe("Page object tools", () => {
     expect(text).toBe("searched: hello");
   });
 
-  test("single step: wait_for existing element", async ({ page }) => {
+  test("wait_for — waits until an element exists in the DOM", async ({ page }) => {
     const results = await executePageObjectAction(page, elements, [
       { wait_for: "username" },
     ]);
     expect(results[0]).toContain("Found");
   });
 
-  test("single step: raw CSS selector (not element name)", async ({ page }) => {
+  test("raw CSS selector — steps accept selectors directly, not just element names", async ({ page }) => {
     const results = await executePageObjectAction(page, elements, [
       { click: "#submit-btn" },
     ]);
     expect(results[0]).toContain("Clicked");
   });
 
-  test("multi-step: fill form and submit", async ({ page }) => {
+  // ── Multi-step workflows ───────────────────────────────────────────────────
+
+  test("multi-step: fill a form and submit using parameterized action", async ({ page }) => {
     const results = await executePageObjectAction(
       page,
       elements,
@@ -228,7 +418,7 @@ test.describe("Page object tools", () => {
     expect(text).toBe("Submitted: charlie / guest");
   });
 
-  test("multi-step: fill, press Enter, read result", async ({ page }) => {
+  test("multi-step: type into search, press Enter, read the result", async ({ page }) => {
     const results = await executePageObjectAction(
       page,
       elements,
@@ -243,92 +433,13 @@ test.describe("Page object tools", () => {
     expect(results[2]).toContain("searched: test query");
   });
 
-  test("error: step references bad selector", async ({ page }) => {
+  // ── Error handling ─────────────────────────────────────────────────────────
+
+  test("returns an error string when a selector matches no element", async ({ page }) => {
     await expect(
       executePageObjectAction(page, elements, [
         { click: "#nonexistent-element-xyz" },
       ]),
     ).resolves.toEqual([expect.stringContaining("Error")]);
-  });
-});
-
-test.describe("Skill YAML parsing", () => {
-  const SKILL_WITH_PAGE_OBJECTS = `---
-description: "Test page helper"
-url: http://test-target.local/**
-elements:
-  search_input:
-    selector: "[data-testid='search']"
-  submit_btn:
-    selector: "#submit"
-actions:
-  search:
-    description: "Search for items"
-    parameters:
-      - query: string
-    steps:
-      - fill: search_input
-        with: "\${query}"
-      - click: submit_btn
-  read_results:
-    description: "Read search results"
-    steps:
-      - read: "#results-area"
----
-You are a helper for the test page.
-`;
-
-  test("parseSkillFile extracts elements and actions", () => {
-    const skill = parseSkillFile("test-po", SKILL_WITH_PAGE_OBJECTS);
-    expect(skill.elements).toEqual({
-      search_input: { selector: "[data-testid='search']" },
-      submit_btn: { selector: "#submit" },
-    });
-    expect(skill.actions).toBeDefined();
-    expect(Object.keys(skill.actions!)).toEqual(["search", "read_results"]);
-  });
-
-  test("parseSkillFile preserves action parameters and steps", () => {
-    const skill = parseSkillFile("test-po", SKILL_WITH_PAGE_OBJECTS);
-    const searchAction = skill.actions!["search"]!;
-    expect(searchAction.description).toBe("Search for items");
-    expect(searchAction.parameters).toEqual([{ query: "string" }]);
-    expect(searchAction.steps).toHaveLength(2);
-    expect(searchAction.steps[0]).toEqual({ fill: "search_input", with: "${query}" });
-    expect(searchAction.steps[1]).toEqual({ click: "submit_btn" });
-  });
-
-  test("parseSkillFile allows raw CSS selectors in steps", () => {
-    const skill = parseSkillFile("test-po", SKILL_WITH_PAGE_OBJECTS);
-    const readAction = skill.actions!["read_results"]!;
-    expect(readAction.steps[0]).toEqual({ read: "#results-area" });
-  });
-
-  test("parseSkillFile validates element references", () => {
-    const badSkill = `---
-description: "Bad skill"
-elements:
-  btn:
-    selector: "#btn"
-actions:
-  do_thing:
-    description: "Does a thing"
-    steps:
-      - click: nonexistent_element
----
-Template
-`;
-    expect(() => parseSkillFile("bad", badSkill)).toThrow(/unknown element "nonexistent_element"/);
-  });
-
-  test("parseSkillFile works without elements/actions", () => {
-    const simpleSkill = `---
-description: "Simple skill"
----
-Just a template
-`;
-    const skill = parseSkillFile("simple", simpleSkill);
-    expect(skill.elements).toBeUndefined();
-    expect(skill.actions).toBeUndefined();
   });
 });

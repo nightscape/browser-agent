@@ -10,7 +10,10 @@
     "start": "NODE_ENV=production node --import tsx proxy/server.ts",
     "pretest": "npm run build:widget",
     "test": "npx playwright test",
-    "test:headed": "npx playwright test --headed"
+    "test:headed": "npx playwright test --headed",
+    "build:debugger": "npx esbuild tools/page-object-debugger.ts --bundle --platform=node --format=esm --external:@playwright/test --banner:js=\"import{createRequire as _cr}from'module';const require=_cr(import.meta.url);\" --outfile=dist/page-object-debugger.mjs",
+    "build:mcp-codegen": "npx esbuild tools/generate-mcp-code.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as _cr}from'module';const require=_cr(import.meta.url);\" --outfile=dist/generate-mcp-code.mjs",
+    "build:po-tools": "npm run build:debugger && npm run build:mcp-codegen"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
