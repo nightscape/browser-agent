@@ -17,6 +17,8 @@ import {
   conversationToMarkdown,
   downloadMarkdown,
 } from "../markdown-export";
+import { useToolCompression } from "../compression-context";
+import { estimateTokens } from "../token-budget";
 
 interface ThreadProps {
   skills: SkillDefinition[];
@@ -76,31 +78,183 @@ const StreamdownText = () => (
   />
 );
 
+const COMPRESSION_OPTIONS: {
+  value: "full" | "summary" | "removed";
+  label: string;
+  color: string;
+}[] = [
+  { value: "full", label: "Full", color: "text-neutral-400" },
+  { value: "summary", label: "Summarized", color: "text-amber-500" },
+  { value: "removed", label: "Removed", color: "text-red-400" },
+];
+
+function formatTokens(n: number): string {
+  return n.toLocaleString();
+}
+
 const ToolFallback: ToolCallMessagePartComponent = ({
   toolName,
+  toolCallId,
   argsText,
   result,
   status,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const isRunning = status.type === "running";
+  const compression = useToolCompression(toolCallId);
+
+  const compressionState = compression.state ?? "full";
+  const currentTokens =
+    compression.tokensByState?.[compressionState] ??
+    compression.tokenEstimate ??
+    (result != null
+      ? estimateTokens(
+          typeof result === "string" ? result : JSON.stringify(result),
+        )
+      : undefined);
+
+  const renderResult = () => {
+    if (result === undefined) return null;
+
+    if (compressionState === "removed") {
+      return (
+        <div className="text-xs text-neutral-500 italic px-1">
+          Result removed from context
+          {compression.tokenEstimate != null && (
+            <span>
+              {" "}
+              — ~{formatTokens(compression.tokenEstimate)} tokens saved
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (compressionState === "summary" && compression.hasEntry) {
+      if (compression.isTransitioning) {
+        return (
+          <div className="flex items-center gap-2 text-xs text-neutral-500">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-neutral-500 border-t-amber-400" />
+            Summarizing...
+          </div>
+        );
+      }
+      return (
+        <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400 max-h-64 overflow-y-auto">
+          {typeof result === "object" &&
+          result !== null &&
+          "_summarized" in (result as Record<string, unknown>)
+            ? ((result as Record<string, unknown>).summary as string)
+            : typeof result === "string"
+              ? result
+              : JSON.stringify(result, null, 2)}
+        </pre>
+      );
+    }
+
+    return (
+      <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400 max-h-64 overflow-y-auto">
+        {typeof result === "string"
+          ? result
+          : JSON.stringify(result, null, 2)}
+      </pre>
+    );
+  };
 
   return (
     <div className="my-2 rounded-lg border border-neutral-700 bg-neutral-900 text-sm not-prose">
-      <button
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-neutral-800 rounded-lg"
+      <div
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-neutral-800 rounded-lg cursor-pointer"
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setExpanded(!expanded);
+        }}
       >
         {isRunning ? (
           <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-500 border-t-blue-400" />
         ) : (
-          <span className="text-green-600 dark:text-green-400 text-xs">&#10003;</span>
+          <span className="text-green-600 dark:text-green-400 text-xs">
+            &#10003;
+          </span>
         )}
         <span className="font-mono text-neutral-300">{toolName}</span>
+        {currentTokens != null && !isRunning && (
+          <span
+            className="text-neutral-500 text-xs"
+            title="Approximate token count in context"
+          >
+            ~{formatTokens(currentTokens)} tok
+          </span>
+        )}
+        {compression.hasEntry && !isRunning && (
+          <div className="relative">
+            <button
+              className={`text-xs px-1.5 py-0.5 rounded border border-neutral-600 hover:border-neutral-500 ${COMPRESSION_OPTIONS.find((o) => o.value === compressionState)?.color ?? "text-neutral-500"} ${compression.isTransitioning ? "opacity-50 cursor-wait" : ""}`}
+              disabled={compression.isTransitioning}
+              onClick={(e) => {
+                e.stopPropagation();
+                setDropdownOpen((o) => !o);
+              }}
+              title="Change compression level"
+            >
+              {compression.isTransitioning
+                ? "..."
+                : COMPRESSION_OPTIONS.find((o) => o.value === compressionState)
+                    ?.label}
+              <span className="ml-1 text-neutral-600">▾</span>
+            </button>
+            {dropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDropdownOpen(false);
+                  }}
+                />
+                <div className="absolute left-0 top-full mt-1 z-50 rounded border border-neutral-600 bg-neutral-800 py-1 shadow-lg min-w-[160px]">
+                  {COMPRESSION_OPTIONS.map((opt) => {
+                    const tokens = compression.tokensByState?.[opt.value];
+                    const isCurrent = opt.value === compressionState;
+                    const needsSummary =
+                      opt.value === "summary" &&
+                      !compression.tokensByState?.summary;
+                    return (
+                      <button
+                        key={opt.value}
+                        className={`flex w-full items-center justify-between gap-3 px-3 py-1.5 text-xs hover:bg-neutral-700 ${isCurrent ? "bg-neutral-700/50" : ""} ${opt.color}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDropdownOpen(false);
+                          if (!isCurrent) compression.setState(opt.value);
+                        }}
+                      >
+                        <span>
+                          {isCurrent && "● "}
+                          {opt.label}
+                        </span>
+                        <span className="text-neutral-500">
+                          {tokens != null
+                            ? `~${formatTokens(tokens)} tok`
+                            : needsSummary
+                              ? "? tok"
+                              : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <span className="ml-auto text-neutral-500 text-xs">
           {expanded ? "▲" : "▼"}
         </span>
-      </button>
+      </div>
       {expanded && (
         <div className="border-t border-neutral-700 px-3 py-2 space-y-2">
           <div>
@@ -112,11 +266,7 @@ const ToolFallback: ToolCallMessagePartComponent = ({
           {result !== undefined && (
             <div>
               <p className="text-xs text-neutral-400 mb-1">Result</p>
-              <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400 max-h-64 overflow-y-auto">
-                {typeof result === "string"
-                  ? result
-                  : JSON.stringify(result, null, 2)}
-              </pre>
+              {renderResult()}
             </div>
           )}
         </div>

@@ -36,6 +36,8 @@ import { WidgetProvider, useWidgetMode } from "./widget-mode";
 import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
 import { useSystemPrompt } from "./use-system-prompt";
 import { ToolFilterDialog } from "./components/ToolFilterDialog";
+import { ToolCompressionProvider } from "./compression-context";
+import { transformMessagesForCompression } from "./message-transform";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -50,6 +52,22 @@ function ChatRuntime({ settings }: { settings: Settings }) {
         ...(settings.baseUrl ? { "X-LLM-Base-URL": settings.baseUrl } : {}),
         ...(settings.temperature != null ? { "X-LLM-Temperature": String(settings.temperature) } : {}),
       }),
+      prepareSendMessagesRequest: async (options) => {
+        const threadId = options.id;
+        const messages = threadId
+          ? await transformMessagesForCompression(options.messages, threadId)
+          : options.messages;
+        return {
+          body: {
+            ...options.body,
+            id: options.id,
+            messages,
+            trigger: options.trigger,
+            messageId: options.messageId,
+            metadata: options.requestMetadata,
+          },
+        };
+      },
     }),
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
@@ -170,6 +188,7 @@ function AppInner({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <ToolCompressionProvider settings={settings}>
       <ThreadFromUrl />
       <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} urlContext={urlContext} />
       <McpToolsBridge settings={settings} predefinedMcpServers={predefinedMcpServers} />
@@ -232,6 +251,7 @@ function AppInner({
           </div>
         </div>
       )}
+    </ToolCompressionProvider>
     </AssistantRuntimeProvider>
   );
 }

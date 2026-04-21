@@ -50,6 +50,56 @@ export async function getFullToolResult(
   });
 }
 
+let storeCount = 0;
+
+export async function pruneOldToolResults(
+  maxEntries = 500,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("messages", "readwrite");
+    const store = tx.objectStore("messages");
+    const all: { messageId: string; createdAt: number }[] = [];
+
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (cursor) {
+        const val = cursor.value as StoredMessage;
+        if (val.format === FORMAT) {
+          all.push({ messageId: val.messageId, createdAt: val.createdAt });
+        }
+        cursor.continue();
+      } else {
+        if (all.length <= maxEntries) return;
+        all.sort((a, b) => a.createdAt - b.createdAt);
+        const toDelete = all.slice(0, all.length - maxEntries);
+        for (const entry of toDelete) {
+          store.delete(entry.messageId);
+        }
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function storeAndPrune(
+  threadId: string,
+  resultId: string,
+  content: string,
+  schema?: object,
+): Promise<void> {
+  await storeFullToolResult(threadId, resultId, content, schema);
+  storeCount++;
+  if (storeCount % 10 === 0) {
+    pruneOldToolResults().catch((err) =>
+      console.warn("Tool result pruning failed:", err),
+    );
+  }
+}
+
 export async function getFullToolResultParsed(
   resultId: string,
 ): Promise<unknown | null> {

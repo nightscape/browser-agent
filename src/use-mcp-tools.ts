@@ -5,12 +5,14 @@ import type { McpServerEntry, Settings } from "./storage/settings";
 import type { PredefinedMcpServer } from "../shared/types";
 import { shouldSummarize, estimateTokens } from "./token-budget";
 import {
-  storeFullToolResult,
+  storeAndPrune,
   getFullToolResult,
   getFullToolResultParsed,
 } from "./storage/tool-results";
 import { inferCompactSchema } from "./schema-inference";
 import { setMcpTools, type McpToolInfo } from "./mcp-tool-registry";
+import { summarizeWithCheapModel } from "./summarize";
+import { putCompressionState } from "./storage/compression-state";
 
 interface McpToolDef {
   name: string;
@@ -41,69 +43,6 @@ function estimateConversationTokens(aui: ReturnType<typeof useAui>): number {
     }
   }
   return Math.ceil(chars / 4);
-}
-
-async function summarizeWithCheapModel(
-  text: string,
-  settings: Settings,
-  schema?: object,
-): Promise<string> {
-  const provider = settings.summaryProvider ?? settings.provider;
-  const model = settings.summaryModel ?? settings.model;
-
-  let prompt = "Summarize the following tool result concisely, preserving key data points, structure, and actionable information. Omit redundant or boilerplate content.";
-  if (schema) {
-    prompt += `\n\nThe data has this JSON Schema:\n${JSON.stringify(schema, null, 2)}`;
-  }
-  prompt += `\n\n${text}`;
-
-  const messages = [
-    {
-      id: "summarize-req",
-      role: "user" as const,
-      parts: [
-        {
-          type: "text" as const,
-          text: prompt,
-        },
-      ],
-    },
-  ];
-
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-LLM-Provider": provider,
-      "X-LLM-Model": model,
-      "X-LLM-API-Key": settings.apiKey,
-      ...(settings.baseUrl ? { "X-LLM-Base-URL": settings.baseUrl } : {}),
-    },
-    body: JSON.stringify({ messages }),
-  });
-
-  // Read the streamed response to completion
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let summary = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    // Parse SSE-style UI message stream: extract text deltas
-    for (const line of chunk.split("\n")) {
-      if (line.startsWith("0:")) {
-        // Text delta format from AI SDK UI stream
-        try {
-          summary += JSON.parse(line.slice(2));
-        } catch {
-          // not a text delta line
-        }
-      }
-    }
-  }
-
-  return summary;
 }
 
 /**
@@ -241,7 +180,10 @@ export function useMcpTools(
         {
           description: string;
           parameters: Record<string, unknown>;
-          execute: (args: Record<string, unknown>) => Promise<unknown>;
+          execute: (
+            args: Record<string, unknown>,
+            context: { toolCallId: string },
+          ) => Promise<unknown>;
         }
       > = {};
 
@@ -250,10 +192,30 @@ export function useMcpTools(
         toolRecord[qualifiedName] = {
           description: `[${serverName}] ${def.description}`,
           parameters: def.inputSchema,
-          execute: async (args: Record<string, unknown>) => {
+          execute: async (
+            args: Record<string, unknown>,
+            context: { toolCallId: string },
+          ) => {
             const raw = await client.callTool(toolName, args);
             const resultText = JSON.stringify(raw);
             const s = settingsRef.current;
+
+            // Always store the full result for retroactive compression
+            const resultId = `full-result-${crypto.randomUUID()}`;
+            const schema = inferCompactSchema(raw);
+            const threadId = getThreadId(aui);
+            const tokenEst = estimateTokens(resultText);
+            if (threadId) {
+              await storeAndPrune(threadId, resultId, resultText, schema);
+              await putCompressionState({
+                threadId,
+                toolCallId: context.toolCallId,
+                resultId,
+                state: "full",
+                schema,
+                tokenEstimate: tokenEst,
+              });
+            }
 
             const conversationTokens = estimateConversationTokens(aui);
             const needsSummary = await shouldSummarize(
@@ -265,7 +227,7 @@ export function useMcpTools(
             console.log("[summarize-decision]", {
               tool: qualifiedName,
               resultChars: resultText.length,
-              resultTokensEst: estimateTokens(resultText),
+              resultTokensEst: tokenEst,
               conversationTokens,
               model: s.model,
               needsSummary,
@@ -273,21 +235,13 @@ export function useMcpTools(
 
             if (!needsSummary) return raw;
 
-            // Store full result and return summary
-            const resultId = `full-result-${crypto.randomUUID()}`;
-            const schema = inferCompactSchema(raw);
-            const threadId = getThreadId(aui);
-            if (threadId) {
-              await storeFullToolResult(threadId, resultId, resultText, schema);
-            }
-
             const summary = await summarizeWithCheapModel(resultText, s, schema);
 
             return {
               _summarized: true,
               _resultId: resultId,
               _fullResultChars: resultText.length,
-              _fullResultTokensEstimate: estimateTokens(resultText),
+              _fullResultTokensEstimate: tokenEst,
               _schema: schema,
               summary,
               _hint:

@@ -56,8 +56,12 @@ export async function putThread(thread: ThreadMetadata): Promise<void> {
 
 export async function deleteThread(id: string): Promise<void> {
   const db = await openDB();
+  const stores = ["threads", "messages"];
+  if (db.objectStoreNames.contains("compressionState")) {
+    stores.push("compressionState");
+  }
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(["threads", "messages"], "readwrite");
+    const tx = db.transaction(stores, "readwrite");
     tx.objectStore("threads").delete(id);
 
     // Delete all messages for this thread
@@ -71,6 +75,20 @@ export async function deleteThread(id: string): Promise<void> {
         cursor.continue();
       }
     };
+
+    // Delete compression states for this thread
+    if (db.objectStoreNames.contains("compressionState")) {
+      const csStore = tx.objectStore("compressionState");
+      const csIdx = csStore.index("threadId");
+      const csCursorReq = csIdx.openCursor(IDBKeyRange.only(id));
+      csCursorReq.onsuccess = () => {
+        const cursor = csCursorReq.result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+    }
 
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);

@@ -1,5 +1,5 @@
 const DB_NAME = "sensai";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let cachedDB: IDBDatabase | null = null;
 
@@ -35,11 +35,23 @@ export function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains("skills")) {
         db.createObjectStore("skills", { keyPath: "name" });
       }
+
+      // v4: compression state for tool results
+      if (!db.objectStoreNames.contains("compressionState")) {
+        const csStore = db.createObjectStore("compressionState", {
+          keyPath: "toolCallId",
+        });
+        csStore.createIndex("threadId", "threadId");
+      }
     };
 
     request.onsuccess = () => {
       cachedDB = request.result;
       cachedDB.onclose = () => {
+        cachedDB = null;
+      };
+      cachedDB.onversionchange = () => {
+        cachedDB?.close();
         cachedDB = null;
       };
       resolve(cachedDB);
