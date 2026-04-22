@@ -24,6 +24,7 @@ export interface DomProxy {
   findByText(args: { text: string; tag?: string; exact?: boolean; limit?: number }): Promise<object[]> | object[];
   getInteractiveElements(args: { selector?: string; limit?: number }): Promise<Record<string, object[]>> | Record<string, object[]>;
   getPageStructure(args: { selector?: string }): Promise<Record<string, unknown>> | Record<string, unknown>;
+  validateSelectors(args: { selectors: Record<string, string> }): Promise<Record<string, object>> | Record<string, object>;
 
   // Interaction methods
   click(args: { selector: string }): Promise<string> | string;

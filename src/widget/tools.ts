@@ -1,6 +1,8 @@
 // Client-side browser tools — run inside the iframe, access host DOM via dom-proxy.
 
 import { dom } from "./dom-proxy";
+import { executeAction } from "../page-object-executor";
+import type { PageObjectAction, PageObjectElement, PageObjectStep } from "../../shared/skills";
 
 export interface BrowserTool {
   description: string;
@@ -331,6 +333,66 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
     async execute(args) {
       const result = await dom.getPageStructure({ selector: args.selector as string });
       return JSON.stringify(result, null, 2);
+    },
+  },
+
+  // ── Skill debugging tools ───────────────────────────────────────────────
+
+  validate_skill_selectors: {
+    description:
+      "Validate a set of named CSS selectors against the current page. For each selector, reports whether it was found, how many matches exist, the tag/text of the first match, and whether it's visible. Use this to test skill element definitions.",
+    parameters: {
+      type: "object",
+      properties: {
+        selectors: {
+          type: "object",
+          description: "Map of element names to CSS selectors, e.g. {\"save_btn\": \"#save\", \"username\": \"input[name='user']\"}.",
+          additionalProperties: { type: "string" },
+        },
+      },
+      required: ["selectors"],
+    },
+    async execute(args) {
+      const result = await dom.validateSelectors({ selectors: args.selectors as Record<string, string> });
+      return JSON.stringify(result, null, 2);
+    },
+  },
+
+  run_page_action: {
+    description:
+      "Execute a page-object action (a sequence of steps like click, fill, select, read) against the current page. Returns the result of each step. Use this to test skill action definitions before finalizing them.",
+    parameters: {
+      type: "object",
+      properties: {
+        elements: {
+          type: "object",
+          description: "Element name → CSS selector map, e.g. {\"save_btn\": {\"selector\": \"#save\"}}.",
+          additionalProperties: {
+            type: "object",
+            properties: { selector: { type: "string" } },
+            required: ["selector"],
+          },
+        },
+        steps: {
+          type: "array",
+          description: "Ordered list of step objects. Each step is one of: {click: \"element_or_selector\"}, {fill: \"element\", with: \"value\"}, {select: \"element\", option: \"value\"}, {press: \"key\", on: \"element\"}, {hover: \"element\"}, {wait_for: \"selector\"}, {read: \"selector\"}.",
+          items: { type: "object" },
+        },
+        params: {
+          type: "object",
+          description: "Parameter values to substitute into ${param} placeholders in steps.",
+          additionalProperties: {},
+        },
+      },
+      required: ["steps"],
+    },
+    async execute(args) {
+      const elements = (args.elements ?? {}) as Record<string, PageObjectElement>;
+      const steps = args.steps as PageObjectStep[];
+      const params = (args.params ?? {}) as Record<string, unknown>;
+      const action: PageObjectAction = { description: "test", steps };
+      const results = await executeAction(action, elements, params, dom);
+      return results.map((r, i) => `Step ${i + 1}: ${r}`).join("\n");
     },
   },
 

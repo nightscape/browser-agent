@@ -63,6 +63,13 @@ export function usePageObjectTools(
       }
     > = {};
 
+    toolRecord["get_page_skills"] = {
+      description:
+        "Return the skill definitions (elements with CSS selectors, actions with steps) for all skills that match the current page URL. Use this to inspect selector definitions before debugging or authoring new skills.",
+      parameters: { type: "object", properties: {} },
+      execute: async () => JSON.stringify(matchedSkills, null, 2),
+    };
+
     const actionSummaries: string[] = [];
 
     for (const skill of matchedSkills) {

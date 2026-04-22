@@ -12,7 +12,7 @@ import {
 import { inferCompactSchema } from "./schema-inference";
 import { setMcpTools, type McpToolInfo } from "./mcp-tool-registry";
 import { summarizeWithCheapModel } from "./summarize";
-import { putCompressionState } from "./storage/compression-state";
+import { putCompressionState, getCompressionState } from "./storage/compression-state";
 
 interface McpToolDef {
   name: string;
@@ -196,6 +196,12 @@ export function useMcpTools(
             args: Record<string, unknown>,
             context: { toolCallId: string },
           ) => {
+            const existing = await getCompressionState(context.toolCallId);
+            if (existing) {
+              const stored = await getFullToolResultParsed(existing.resultId);
+              if (stored !== null) return stored;
+            }
+
             const raw = await client.callTool(toolName, args);
             const resultText = JSON.stringify(raw);
             const s = settingsRef.current;

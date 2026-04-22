@@ -490,6 +490,30 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
       return structure;
     },
 
+    validateSelectors({ selectors }) {
+      const results: Record<string, object> = {};
+      for (const [name, selector] of Object.entries(selectors)) {
+        const matches = document.querySelectorAll(selector);
+        const count = matches.length;
+        const first = matches[0];
+        results[name] = {
+          selector,
+          found: count > 0,
+          count,
+          ...(first && {
+            tag: first.tagName.toLowerCase(),
+            text: first.textContent?.trim().slice(0, 100) ?? "",
+            visible: (() => {
+              const style = window.getComputedStyle(first);
+              const rect = first.getBoundingClientRect();
+              return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+            })(),
+          }),
+        };
+      }
+      return results;
+    },
+
     // ── Interaction methods ─────────────────────────────────────────────
 
     click({ selector }) {
