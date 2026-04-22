@@ -15,6 +15,16 @@ export interface DomProxy {
   getTables(args: { selector?: string; maxRows?: number }): Promise<object[]> | object[];
   getFormFields(args: { selector?: string }): Promise<object[]> | object[];
 
+  // Inspection methods
+  executeScript(args: { script: string }): Promise<string> | string;
+  getOuterHtml(args: { selector: string; maxLength?: number }): Promise<string> | string;
+  getAttributes(args: { selector: string; limit?: number }): Promise<object[]> | object[];
+  isVisible(args: { selector: string }): Promise<object> | object;
+  getComputedStyle(args: { selector: string; properties: string[] }): Promise<Record<string, string>> | Record<string, string>;
+  findByText(args: { text: string; tag?: string; exact?: boolean; limit?: number }): Promise<object[]> | object[];
+  getInteractiveElements(args: { selector?: string; limit?: number }): Promise<Record<string, object[]>> | Record<string, object[]>;
+  getPageStructure(args: { selector?: string }): Promise<Record<string, unknown>> | Record<string, unknown>;
+
   // Interaction methods
   click(args: { selector: string }): Promise<string> | string;
   fill(args: { selector: string; value: string }): Promise<string> | string;

@@ -149,6 +149,191 @@ export const BROWSER_TOOLS: Record<string, BrowserTool> = {
     },
   },
 
+  // ── Inspection tools ────────────────────────────────────────────────────
+
+  execute_script: {
+    description:
+      "Run arbitrary JavaScript in the browser and return the result. The script is executed via `new Function(script)()` on the host page. Return a value from the script to see it. This is the most powerful debugging tool — use it to inspect elements, check attributes, test selectors, etc.",
+    parameters: {
+      type: "object",
+      properties: {
+        script: {
+          type: "string",
+          description:
+            "JavaScript code to execute. Use `return` to produce output (e.g. `return document.querySelector('li[role=\"tab\"]').textContent`). Has full access to the host page DOM.",
+        },
+      },
+      required: ["script"],
+    },
+    async execute(args) {
+      return dom.executeScript({ script: args.script as string });
+    },
+  },
+
+  get_outer_html: {
+    description:
+      "Return the raw outer HTML of the first element matching a CSS selector. Great for seeing exact attribute names, nesting, and class structures.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element.",
+        },
+        maxLength: {
+          type: "number",
+          description: "Maximum characters to return (default: 50000).",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      return dom.getOuterHtml({ selector: args.selector as string, maxLength: args.maxLength as number });
+    },
+  },
+
+  get_attributes: {
+    description:
+      "Return ALL attributes of elements matching a CSS selector. Unlike query_selector which only returns a curated subset, this returns every attribute — useful for discovering data-* attributes, aria-* attributes, PrimeFaces-specific attributes, etc.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector to query.",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of elements to return (default: 20).",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      const results = await dom.getAttributes({ selector: args.selector as string, limit: args.limit as number });
+      return JSON.stringify(results, null, 2);
+    },
+  },
+
+  is_visible: {
+    description:
+      "Check if an element is actually visible on screen. Returns display, visibility, opacity, bounding rect, and whether it's in the viewport. Useful for distinguishing DOM-present-but-hidden elements (like PrimeFaces dialogs) from truly visible ones.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to check.",
+        },
+      },
+      required: ["selector"],
+    },
+    async execute(args) {
+      const result = await dom.isVisible({ selector: args.selector as string });
+      return JSON.stringify(result, null, 2);
+    },
+  },
+
+  get_computed_style: {
+    description:
+      "Get computed CSS property values for an element. Useful for checking display, visibility, opacity, z-index, position, and other properties that affect rendering.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element.",
+        },
+        properties: {
+          type: "array",
+          items: { type: "string" },
+          description: "CSS property names to read (e.g. ['display', 'visibility', 'opacity', 'z-index']).",
+        },
+      },
+      required: ["selector", "properties"],
+    },
+    async execute(args) {
+      const result = await dom.getComputedStyle({ selector: args.selector as string, properties: args.properties as string[] });
+      return JSON.stringify(result, null, 2);
+    },
+  },
+
+  find_by_text: {
+    description:
+      "Find elements by their text content. Returns matching elements with their tag, text, direct text (excluding child element text), attributes, and child count. Much more intuitive than CSS selectors when you know what text is on screen.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "The text to search for.",
+        },
+        tag: {
+          type: "string",
+          description: "Optional HTML tag to filter by (e.g. 'li', 'button', 'a', 'span'). Case-insensitive.",
+        },
+        exact: {
+          type: "boolean",
+          description: "If true, match the full text content exactly instead of substring match (default: false).",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results (default: 20).",
+        },
+      },
+      required: ["text"],
+    },
+    async execute(args) {
+      const results = await dom.findByText({
+        text: args.text as string,
+        tag: args.tag as string | undefined,
+        exact: args.exact as boolean | undefined,
+        limit: args.limit as number | undefined,
+      });
+      return JSON.stringify(results, null, 2);
+    },
+  },
+
+  get_interactive_elements: {
+    description:
+      "Discover all interactive elements on the page: buttons, links, inputs, selects, tabs, menu items, toggles, and elements with JS event handlers. Returns them grouped by category with suggested CSS selectors. Essential for understanding what a user can do on the page.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector to scope the search (default: 'body').",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum total elements to return across all groups (default: 100).",
+        },
+      },
+    },
+    async execute(args) {
+      const result = await dom.getInteractiveElements({ selector: args.selector as string, limit: args.limit as number });
+      return JSON.stringify(result, null, 2);
+    },
+  },
+
+  get_page_structure: {
+    description:
+      "Get a high-level semantic map of the page: landmarks (header, nav, main, footer), forms with their fields and buttons, tables with column headers, lists with item counts and samples, and content sections with headings. Use this first to understand the page layout before drilling into specifics.",
+    parameters: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector to scope the analysis (default: 'body').",
+        },
+      },
+    },
+    async execute(args) {
+      const result = await dom.getPageStructure({ selector: args.selector as string });
+      return JSON.stringify(result, null, 2);
+    },
+  },
+
   // ── Interaction tools ───────────────────────────────────────────────────
 
   click: {

@@ -254,6 +254,242 @@ export function createBridge(options: BridgeOptions): { destroy: () => void } {
       });
     },
 
+    // ── Inspection methods ──────────────────────────────────────────────
+
+    executeScript({ script }) {
+      const result = new Function(script)();
+      if (result === undefined) return "undefined";
+      if (result === null) return "null";
+      if (typeof result === "object") return JSON.stringify(result, null, 2);
+      return String(result);
+    },
+
+    getOuterHtml({ selector, maxLength = 50_000 }) {
+      const el = requireEl(selector);
+      let html = el.outerHTML;
+      if (html.length > maxLength) {
+        html = html.slice(0, maxLength) + `\n\n[Truncated at ${maxLength} chars, ${html.length} total]`;
+      }
+      return html;
+    },
+
+    getAttributes({ selector, limit = 20 }) {
+      const elements = document.querySelectorAll(selector);
+      const items: object[] = [];
+      for (let i = 0; i < Math.min(elements.length, limit); i++) {
+        const el = elements[i]!;
+        const attrs: Record<string, string> = {};
+        for (const attr of el.attributes) {
+          attrs[attr.name] = attr.value;
+        }
+        items.push({
+          tag: el.tagName.toLowerCase(),
+          text: el.textContent?.trim().slice(0, 200) ?? "",
+          attributes: attrs,
+        });
+      }
+      return items;
+    },
+
+    isVisible({ selector }) {
+      const el = requireEl(selector) as HTMLElement;
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return {
+        visible: style.display !== "none" && style.visibility !== "hidden" && parseFloat(style.opacity) > 0 && rect.width > 0 && rect.height > 0,
+        display: style.display,
+        visibility: style.visibility,
+        opacity: style.opacity,
+        rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        inViewport: rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0,
+      };
+    },
+
+    getComputedStyle({ selector, properties }) {
+      const el = requireEl(selector);
+      const style = window.getComputedStyle(el);
+      const result: Record<string, string> = {};
+      for (const prop of properties) {
+        result[prop] = style.getPropertyValue(prop);
+      }
+      return result;
+    },
+
+    findByText({ text, tag, exact = false, limit = 20 }) {
+      const tagFilter = tag?.toUpperCase() ?? "";
+      const results: object[] = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+        acceptNode(node) {
+          if (tagFilter && (node as Element).tagName !== tagFilter) return NodeFilter.FILTER_SKIP;
+          const content = (node as Element).textContent?.trim() ?? "";
+          const match = exact ? content === text : content.includes(text);
+          return match ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        },
+      });
+      let node: Node | null;
+      while ((node = walker.nextNode()) && results.length < limit) {
+        const el = node as Element;
+        const attrs: Record<string, string> = {};
+        for (const attr of el.attributes) {
+          attrs[attr.name] = attr.value;
+        }
+        results.push({
+          tag: el.tagName.toLowerCase(),
+          text: el.textContent?.trim().slice(0, 200) ?? "",
+          directText: Array.from(el.childNodes)
+            .filter((n) => n.nodeType === Node.TEXT_NODE)
+            .map((n) => n.textContent?.trim())
+            .filter(Boolean)
+            .join(" "),
+          attributes: attrs,
+          childCount: el.children.length,
+        });
+      }
+      return results;
+    },
+
+    getInteractiveElements({ selector = "body", limit = 100 }) {
+      const container = document.querySelector(selector);
+      if (!container) return {};
+
+      const INTERACTIVE = "a[href], button, input, select, textarea, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='checkbox'], [role='radio'], [role='switch'], [onclick], [onchange], [onsubmit], [tabindex]";
+      const els = container.querySelectorAll(INTERACTIVE);
+
+      const groups: Record<string, object[]> = {};
+      let count = 0;
+      for (const el of els) {
+        if (count >= limit) break;
+        const tag = el.tagName.toLowerCase();
+        const type = el.getAttribute("type");
+        const role = el.getAttribute("role");
+
+        let category: string;
+        if (tag === "a") category = "link";
+        else if (tag === "button" || role === "button" || type === "submit" || type === "button" || type === "reset") category = "button";
+        else if (tag === "input" || tag === "textarea") category = "input";
+        else if (tag === "select") category = "select";
+        else if (role === "tab" || role === "menuitem") category = "menu";
+        else if (role === "checkbox" || role === "radio" || role === "switch") category = "toggle";
+        else category = "other";
+
+        const id = el.id;
+        const name = el.getAttribute("name");
+        const testId = el.getAttribute("data-testid");
+        let suggestedSelector = "";
+        if (id) suggestedSelector = `#${id}`;
+        else if (testId) suggestedSelector = `[data-testid="${testId}"]`;
+        else if (name) suggestedSelector = `${tag}[name="${name}"]`;
+
+        const item: Record<string, unknown> = {
+          tag,
+          text: el.textContent?.trim().slice(0, 120) ?? "",
+        };
+        if (type) item.type = type;
+        if (role) item.role = role;
+        if (suggestedSelector) item.selector = suggestedSelector;
+        if (el.getAttribute("aria-label")) item.ariaLabel = el.getAttribute("aria-label");
+        if (el.getAttribute("href")) item.href = el.getAttribute("href")!.slice(0, 200);
+        if (el.getAttribute("placeholder")) item.placeholder = el.getAttribute("placeholder");
+        if ((el as HTMLInputElement).disabled) item.disabled = true;
+
+        (groups[category] ??= []).push(item);
+        count++;
+      }
+      return groups;
+    },
+
+    getPageStructure({ selector = "body" }) {
+      const container = document.querySelector(selector);
+      if (!container) return {};
+
+      const structure: Record<string, unknown> = {};
+
+      const landmarks: object[] = [];
+      for (const el of container.querySelectorAll("header, nav, main, aside, footer, [role='banner'], [role='navigation'], [role='main'], [role='complementary'], [role='contentinfo'], [role='search']")) {
+        const tag = el.tagName.toLowerCase();
+        const role = el.getAttribute("role");
+        const id = el.id;
+        const heading = el.querySelector("h1, h2, h3, h4, h5, h6");
+        landmarks.push({
+          tag,
+          ...(role && { role }),
+          ...(id && { id }),
+          ...(heading && { heading: heading.textContent?.trim().slice(0, 100) }),
+        });
+      }
+      if (landmarks.length > 0) structure.landmarks = landmarks;
+
+      const forms: object[] = [];
+      for (const form of container.querySelectorAll("form")) {
+        const fields = form.querySelectorAll("input, select, textarea");
+        const fieldSummary: string[] = [];
+        for (const f of fields) {
+          const name = f.getAttribute("name") || f.id || f.getAttribute("type") || f.tagName.toLowerCase();
+          fieldSummary.push(name);
+        }
+        forms.push({
+          ...(form.id && { id: form.id }),
+          ...(form.getAttribute("action") && { action: form.getAttribute("action") }),
+          ...(form.getAttribute("name") && { name: form.getAttribute("name") }),
+          fieldCount: fields.length,
+          fields: fieldSummary.slice(0, 20),
+          buttons: Array.from(form.querySelectorAll("button, input[type='submit'], input[type='button']"))
+            .map((b) => b.textContent?.trim() || b.getAttribute("value") || "")
+            .filter(Boolean)
+            .slice(0, 10),
+        });
+      }
+      if (forms.length > 0) structure.forms = forms;
+
+      const tables: object[] = [];
+      for (const table of container.querySelectorAll("table")) {
+        const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"))
+          .map((th) => th.textContent?.trim() ?? "");
+        const rowCount = table.querySelectorAll("tbody tr, tr").length;
+        tables.push({
+          ...(table.id && { id: table.id }),
+          ...(table.getAttribute("aria-label") && { label: table.getAttribute("aria-label") }),
+          columns: headers.length > 0 ? headers : undefined,
+          rowCount,
+        });
+      }
+      if (tables.length > 0) structure.tables = tables;
+
+      const lists: object[] = [];
+      for (const list of container.querySelectorAll("ul, ol, dl, [role='list'], [role='listbox']")) {
+        const tag = list.tagName.toLowerCase();
+        if (list.closest("nav")) continue;
+        const itemCount = tag === "dl"
+          ? list.querySelectorAll("dt").length
+          : list.children.length;
+        if (itemCount < 2) continue;
+        const sampleItems = Array.from(list.children).slice(0, 3)
+          .map((c) => c.textContent?.trim().slice(0, 80) ?? "");
+        lists.push({
+          tag,
+          ...(list.id && { id: list.id }),
+          itemCount,
+          sample: sampleItems,
+        });
+      }
+      if (lists.length > 0) structure.lists = lists;
+
+      const sections: object[] = [];
+      for (const sec of container.querySelectorAll("section, article, [role='region'], [role='tabpanel']")) {
+        const heading = sec.querySelector("h1, h2, h3, h4, h5, h6");
+        sections.push({
+          tag: sec.tagName.toLowerCase(),
+          ...(sec.id && { id: sec.id }),
+          ...(sec.getAttribute("role") && { role: sec.getAttribute("role") }),
+          ...(sec.getAttribute("aria-label") && { label: sec.getAttribute("aria-label") }),
+          ...(heading && { heading: heading.textContent?.trim().slice(0, 100) }),
+        });
+      }
+      if (sections.length > 0) structure.sections = sections;
+
+      return structure;
+    },
+
     // ── Interaction methods ─────────────────────────────────────────────
 
     click({ selector }) {
