@@ -4,7 +4,7 @@
 // @version      0.1.0
 // @description  Inject SensAI chat assistant into any page
 // @match        *://*/*
-// @require      __SENSAI_SERVER__/sensai-widget.iife.js
+// @require      __SENSAI_SERVER__/sensai-widget.iife.js?v=__BUILD_HASH__
 // @run-at       document-idle
 // ==/UserScript==
 

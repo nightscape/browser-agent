@@ -123,11 +123,15 @@ p{line-height:1.6}</style></head>
 // ── Userscript (serves static file with correct server URL) ──────────────
 app.get("/sensai.user.js", async (c) => {
   const { readFile } = await import("node:fs/promises");
+  const { createHash } = await import("node:crypto");
   const { dirname, join } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
-  const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), "templates/sensai.user.js"), "utf-8");
+  const proxyDir = dirname(fileURLToPath(import.meta.url));
+  const source = await readFile(join(proxyDir, "templates/sensai.user.js"), "utf-8");
+  const widgetContent = await readFile(join(proxyDir, "..", "dist-widget", "sensai-widget.iife.js"));
+  const buildHash = createHash("sha256").update(widgetContent).digest("hex").slice(0, 8);
   const origin = httpsOrigin(c.req.url);
-  const script = source.replaceAll("__SENSAI_SERVER__", origin);
+  const script = source.replaceAll("__SENSAI_SERVER__", origin).replaceAll("__BUILD_HASH__", buildHash);
   c.header("Content-Type", "application/javascript");
   return c.body(script);
 });
