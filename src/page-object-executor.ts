@@ -12,7 +12,11 @@ export function substituteParams(
   str: string,
   params: Record<string, unknown>,
 ): string {
-  return str.replace(/\$\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ""));
+  return str.replace(/\$\{([^}]+)\}/g, (_, expr: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const fn = new Function(...Object.keys(params), `return (${expr})`);
+    return String(fn(...Object.values(params)));
+  });
 }
 
 function resolveAndSubstitute(
