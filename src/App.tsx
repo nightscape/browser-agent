@@ -4,7 +4,10 @@ import {
   unstable_useRemoteThreadListRuntime,
   useComposerRuntime,
   useAui,
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  useThreadListItem,
 } from "@assistant-ui/react";
+import { setThreadRunning } from "./running-threads";
 import {
   useChatRuntime,
   AssistantChatTransport,
@@ -143,6 +146,8 @@ function AppInner({
   onOpenExportImport,
   onOpenToolFilter,
   sendRef,
+  availableModels,
+  onModelChange,
 }: {
   settings: Settings;
   agents: AgentDefinition[];
@@ -156,6 +161,8 @@ function AppInner({
   onOpenExportImport: () => void;
   onOpenToolFilter: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
+  availableModels: string[];
+  onModelChange: (model: string) => void;
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -181,7 +188,20 @@ function AppInner({
 
   const runtime = unstable_useRemoteThreadListRuntime({
     runtimeHook: function RuntimeHook() {
-      return ChatRuntime({ settings });
+      const chatRuntime = ChatRuntime({ settings });
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      const threadId = useThreadListItem((s) => s.id);
+      useEffect(() => {
+        const thread = chatRuntime.thread;
+        const update = () => setThreadRunning(threadId, thread.getState().isRunning);
+        update();
+        const unsub = thread.subscribe(update);
+        return () => {
+          unsub();
+          setThreadRunning(threadId, false);
+        };
+      }, [chatRuntime.thread, threadId]);
+      return chatRuntime;
     },
     adapter,
   });
@@ -203,7 +223,7 @@ function AppInner({
           />
           <PageContextBar />
           <div className="flex-1 overflow-hidden">
-            <Thread skills={skills} onActivateSkill={onActivateSkill} onOpenToolFilter={onOpenToolFilter} />
+            <Thread skills={skills} onActivateSkill={onActivateSkill} onOpenToolFilter={onOpenToolFilter} model={settings.model} availableModels={availableModels} onModelChange={onModelChange} />
           </div>
           <WidgetThreadDrawer
             open={drawerOpen}
@@ -247,6 +267,9 @@ function AppInner({
               skills={skills}
               onActivateSkill={onActivateSkill}
               onOpenToolFilter={onOpenToolFilter}
+              model={settings.model}
+              availableModels={availableModels}
+              onModelChange={onModelChange}
             />
           </div>
         </div>
@@ -284,6 +307,15 @@ function AppRoot() {
     () => collectGlobalVariables(skills, envConfig?.variableDefinitions ?? {}),
     [skills, envConfig?.variableDefinitions],
   );
+
+  const availableModels = useMemo(
+    () => envConfig?.providers.find((p) => p.id === settings?.provider)?.models ?? [],
+    [envConfig, settings?.provider],
+  );
+
+  const handleModelChange = useCallback((model: string) => {
+    setSettings((prev) => prev ? { ...prev, model } : null);
+  }, []);
 
   const urlContext = useMemo(() => {
     if (!pageContext || skills.length === 0) return undefined;
@@ -420,6 +452,8 @@ function AppRoot() {
           onOpenToolFilter={() => setShowToolFilter(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
+          availableModels={availableModels}
+          onModelChange={handleModelChange}
         />
       </div>
 

@@ -2,7 +2,10 @@ import { useState } from "react";
 import {
   ThreadListPrimitive,
   ThreadListItemPrimitive,
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  useThreadListItem,
 } from "@assistant-ui/react";
+import { useIsThreadRunning } from "../running-threads";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
 
@@ -12,11 +15,21 @@ interface Props {
   onNewSkill: () => void;
 }
 
+function ThreadListItemRunningIndicator() {
+  const id = useThreadListItem((s) => s.id);
+  const isRunning = useIsThreadRunning(id);
+  if (!isRunning) return null;
+  return (
+    <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-neutral-600 border-t-blue-400" />
+  );
+}
+
 const ThreadListItem = () => (
   <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 data-[active]:bg-neutral-800 data-[active]:text-white">
     <ThreadListItemPrimitive.Trigger className="flex-1 truncate text-left">
       <ThreadListItemPrimitive.Title fallback="New conversation" />
     </ThreadListItemPrimitive.Trigger>
+    <ThreadListItemRunningIndicator />
     <ThreadListItemPrimitive.Delete className="hidden shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-700 hover:text-neutral-300 group-hover:block">
       <svg
         xmlns="http://www.w3.org/2000/svg"

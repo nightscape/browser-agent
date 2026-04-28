@@ -25,6 +25,9 @@ interface ThreadProps {
   skills: SkillDefinition[];
   onActivateSkill: (skillName: string) => void;
   onOpenToolFilter?: () => void;
+  model: string;
+  availableModels: string[];
+  onModelChange: (model: string) => void;
 }
 
 const DownloadIcon = () => (
@@ -297,6 +300,22 @@ const AssistantMessage = () => (
   </MessagePrimitive.Root>
 );
 
+function ChatSpinner() {
+  const isRunning = useThread((s) => s.isRunning);
+  const lastMsgRole = useThread((s) => {
+    const msgs = s.messages;
+    return msgs.length > 0 ? msgs[msgs.length - 1]?.role : null;
+  });
+  if (!isRunning || lastMsgRole !== "user") return null;
+  return (
+    <div className="mb-4 flex items-start">
+      <div className="rounded-2xl bg-neutral-800 px-4 py-3">
+        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-500 border-t-blue-400" />
+      </div>
+    </div>
+  );
+}
+
 function SkillAutocomplete({
   skills,
   filter,
@@ -340,7 +359,53 @@ function SkillAutocomplete({
   );
 }
 
-function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void; onOpenToolFilter?: () => void }) {
+function ModelSelector({ model, availableModels, onModelChange }: { model: string; availableModels: string[]; onModelChange: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const hasMessages = useThread((s) => s.messages.length > 0);
+
+  if (availableModels.length <= 1) return null;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-10 items-center gap-1 rounded-xl border border-neutral-700 px-2.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+        title="Select model"
+      >
+        <span className="max-w-[120px] truncate">{model}</span>
+        <span className="text-neutral-600 text-[10px]">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full right-0 mb-1 z-50 rounded-lg border border-neutral-600 bg-neutral-800 py-1 shadow-xl min-w-[220px]">
+            {hasMessages && (
+              <div className="mx-2 mb-1 mt-0.5 rounded-md border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-xs text-amber-400">
+                Changing model mid-conversation will re-send history to the new model, costing extra tokens.
+              </div>
+            )}
+            {availableModels.map((m) => (
+              <button
+                key={m}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-neutral-700 ${m === model ? "text-neutral-200" : "text-neutral-400"}`}
+                onClick={() => {
+                  setOpen(false);
+                  if (m !== model) onModelChange(m);
+                }}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${m === model ? "bg-blue-400" : "bg-transparent"}`} />
+                {m}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Composer({ skills, onActivateSkill, onOpenToolFilter, model, availableModels, onModelChange }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void; onOpenToolFilter?: () => void; model: string; availableModels: string[]; onModelChange: (m: string) => void }) {
   const composerRuntime = useComposerRuntime();
   const isRunning = useThread((s) => s.isRunning);
   const [inputValue, setInputValue] = useState("");
@@ -465,6 +530,7 @@ function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: Skill
             onKeyDown={handleKeyDown}
           />
         </div>
+        <ModelSelector model={model} availableModels={availableModels} onModelChange={onModelChange} />
         {onOpenToolFilter && (
           <button
             type="button"
@@ -527,7 +593,7 @@ export function ConversationMarkdownButton({ className }: { className?: string }
   );
 }
 
-export function Thread({ skills, onActivateSkill, onOpenToolFilter }: ThreadProps) {
+export function Thread({ skills, onActivateSkill, onOpenToolFilter, model, availableModels, onModelChange }: ThreadProps) {
   return (
     <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -547,9 +613,10 @@ export function Thread({ skills, onActivateSkill, onOpenToolFilter }: ThreadProp
           <ThreadPrimitive.Messages
             components={{ UserMessage, AssistantMessage }}
           />
+          <ChatSpinner />
         </div>
       </ThreadPrimitive.Viewport>
-      <Composer skills={skills} onActivateSkill={onActivateSkill} onOpenToolFilter={onOpenToolFilter} />
+      <Composer skills={skills} onActivateSkill={onActivateSkill} onOpenToolFilter={onOpenToolFilter} model={model} availableModels={availableModels} onModelChange={onModelChange} />
     </ThreadPrimitive.Root>
   );
 }
