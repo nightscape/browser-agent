@@ -141,7 +141,8 @@ app.get("/page-object-runner.js", async (c) => {
   const { readFile } = await import("node:fs/promises");
   const { dirname, join } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
-  const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), "templates/page-object-runner.js"), "utf-8");
+  const proxyDir = dirname(fileURLToPath(import.meta.url));
+  const source = await readFile(join(proxyDir, "..", "dist", "po-runner.js"), "utf-8");
   c.header("Content-Type", "application/javascript");
   c.header("Access-Control-Allow-Origin", "*");
   return c.body(source);

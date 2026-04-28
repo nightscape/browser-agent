@@ -195,8 +195,13 @@ test.describe("substituteParams — replace ${name} placeholders with values", (
     expect(substituteParams("count: ${n}", { n: 42 })).toBe("count: 42");
   });
 
-  test("replaces missing parameters with empty string", () => {
-    expect(substituteParams("Hi ${name}", {})).toBe("Hi ");
+  test("evaluates ${...} as a JS expression over the params", () => {
+    expect(substituteParams("nth-child(${i + 1})", { i: 0 })).toBe("nth-child(1)");
+    expect(substituteParams("${a + b}", { a: 2, b: 3 })).toBe("5");
+  });
+
+  test("throws on undefined identifiers (typos surface as ReferenceError)", () => {
+    expect(() => substituteParams("Hi ${name}", {})).toThrow(/name is not defined/);
   });
 
   test("leaves strings without placeholders unchanged", () => {
@@ -495,13 +500,14 @@ test.describe("for_each — executor with mock DomProxy", () => {
       ],
     };
 
-    await executeAction(action, {}, {
-      items: ["a"],
-    }, dom);
+    // The first (in-loop) step substitutes ${item} from the as-binding; after
+    // the loop ends the binding is gone, so referencing ${item} throws —
+    // confirming the binding is scoped to the loop body.
+    await expect(executeAction(action, {}, { items: ["a"] }, dom))
+      .rejects.toThrow(/item is not defined/);
 
     expect(dom.calls[0]).toEqual({ method: "click", args: { selector: "#a" } });
-    // ${item} is not defined in the outer scope, so it substitutes to empty string
-    expect(dom.calls[1]).toEqual({ method: "click", args: { selector: "#after-" } });
+    expect(dom.calls).toHaveLength(1);
   });
 
   test("throws when for_each target is not an object or array", async () => {
@@ -693,5 +699,90 @@ test.describe("Step execution via DOM bridge", () => {
         { click: "#nonexistent-element-xyz" },
       ]),
     ).resolves.toEqual([expect.stringContaining("Error")]);
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4. Playwright runner bundle — the dist/po-runner.js artifact loaded by LLMs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe("Playwright runner bundle", () => {
+  // Smoke-test the bundled runner end-to-end: load the same self-contained
+  // expression an LLM would (`new Function("return " + src)()`), parse a
+  // skill, and run an action against a real Playwright page.
+
+  const RUNNER_SRC = readFileSync(resolve(__dirname, "..", "dist", "po-runner.js"), "utf-8");
+
+  function loadRunner(): (input: string) => any {
+    return new Function("return " + RUNNER_SRC)();
+  }
+
+  test("bundle exposes a function (single-expression form)", () => {
+    expect(typeof loadRunner()).toBe("function");
+  });
+
+  test("call() runs a parameterized action against a live page", async ({ page }) => {
+    await page.route("http://runner-target.local/**", (route) =>
+      route.fulfill({ body: PAGE_OBJECT_HTML, contentType: "text/html" }),
+    );
+    await page.goto("http://runner-target.local/");
+
+    const sensaiPageObject = loadRunner();
+    const po = sensaiPageObject(`---
+description: "Test"
+url: http://runner-target.local/**
+elements:
+  username:
+    selector: "#username"
+  submit:
+    selector: "#submit-btn"
+actions:
+  set_user:
+    description: "Fill username"
+    parameters:
+      - name: string
+    steps:
+      - fill: username
+        with: "\${name}"
+      - click: submit
+---
+template
+`);
+
+    expect(po.tools.map((t: any) => t.name)).toEqual(["po_set_user"]);
+    const result = await po.call(page, "po_set_user", { name: "alice" });
+    expect(result).toContain("Filled");
+    expect(result).toContain("Clicked");
+    expect(await page.locator("#result").textContent()).toContain("alice");
+  });
+
+  test("call() runs a for_each action with array index arithmetic", async ({ page }) => {
+    await page.route("http://runner-target.local/**", (route) =>
+      route.fulfill({ body: PAGE_OBJECT_HTML, contentType: "text/html" }),
+    );
+    await page.goto("http://runner-target.local/");
+
+    const po = loadRunner()(`---
+description: "Bulk fill"
+url: http://runner-target.local/**
+actions:
+  fill_fields:
+    description: "Fill ordered fields"
+    parameters:
+      - values: array
+    steps:
+      - for_each: "\${values}"
+        as: [val, idx]
+        steps:
+          - fill: "#test-form > input:nth-of-type(\${idx + 1})"
+            with: "\${val}"
+---
+template
+`);
+
+    const result = await po.call(page, "po_fill_fields", { values: ["x", "y"] });
+    expect(result).not.toContain("FAIL");
+    expect(result).toContain("Filled");
   });
 });

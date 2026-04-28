@@ -6,6 +6,7 @@ import {
   ErrorPrimitive,
   useComposerRuntime,
   useMessage,
+  useThread,
   useThreadRuntime,
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
@@ -341,9 +342,11 @@ function SkillAutocomplete({
 
 function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void; onOpenToolFilter?: () => void }) {
   const composerRuntime = useComposerRuntime();
+  const isRunning = useThread((s) => s.isRunning);
   const [inputValue, setInputValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isSlashQuery = inputValue.startsWith("/") && !inputValue.includes(" ");
@@ -352,6 +355,24 @@ function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: Skill
     ? skills.filter((s) => s.name.toLowerCase().includes(query))
     : [];
   const shouldShow = showAutocomplete && matches.length > 0;
+
+  // Auto-send queued message when thread becomes idle
+  useEffect(() => {
+    if (!isRunning && pendingMessage !== null) {
+      composerRuntime.setText(pendingMessage);
+      composerRuntime.send();
+      setPendingMessage(null);
+    }
+  }, [isRunning]);
+
+  const queueMessage = useCallback(() => {
+    const text = inputValue.trim();
+    if (!text) return;
+    setPendingMessage(text);
+    composerRuntime.setText("");
+    setInputValue("");
+    setShowAutocomplete(false);
+  }, [inputValue, composerRuntime]);
 
   const selectSkill = useCallback(
     (name: string) => {
@@ -365,6 +386,11 @@ function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: Skill
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey && isRunning && !shouldShow) {
+        e.preventDefault();
+        queueMessage();
+        return;
+      }
       if (!shouldShow) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -379,7 +405,7 @@ function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: Skill
         setShowAutocomplete(false);
       }
     },
-    [shouldShow, matches, selectedIndex, selectSkill],
+    [shouldShow, matches, selectedIndex, selectSkill, isRunning, queueMessage],
   );
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -401,46 +427,81 @@ function Composer({ skills, onActivateSkill, onOpenToolFilter }: { skills: Skill
   }, [composerRuntime]);
 
   return (
-    <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 border-t border-neutral-800 bg-neutral-900 p-4">
-      <div ref={containerRef} className="relative flex-1">
-        {shouldShow && (
-          <SkillAutocomplete
-            skills={skills}
-            filter={inputValue}
-            selectedIndex={selectedIndex}
-            onSelect={selectSkill}
-          />
-        )}
-        <ComposerPrimitive.Input
-          placeholder="Ask something... (/ for skills)"
-          className="min-h-[40px] w-full resize-none rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-blue-500"
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-        />
-      </div>
-      {onOpenToolFilter && (
-        <button
-          type="button"
-          onClick={onOpenToolFilter}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
-          title="Filter MCP tools"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-            <path fillRule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 8 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L2.659 6.22A2.25 2.25 0 0 1 2 4.629V2.34a.75.75 0 0 1 .628-.74Z" clipRule="evenodd" />
-          </svg>
-        </button>
+    <div className="border-t border-neutral-800 bg-neutral-900">
+      {pendingMessage !== null && (
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 pt-3">
+          <span className="text-xs text-neutral-500">Queued:</span>
+          <span className="flex-1 truncate text-xs text-neutral-300">{pendingMessage}</span>
+          <button
+            type="button"
+            onClick={() => {
+              composerRuntime.setText(pendingMessage);
+              setInputValue(pendingMessage);
+              setPendingMessage(null);
+            }}
+            className="shrink-0 text-neutral-500 hover:text-neutral-300"
+            title="Cancel queued message"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+            </svg>
+          </button>
+        </div>
       )}
-      <ComposerPrimitive.Send className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-500 disabled:opacity-40">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className="h-5 w-5"
-        >
-          <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.635a.75.75 0 0 0 0-1.403L3.105 2.288Z" />
-        </svg>
-      </ComposerPrimitive.Send>
-    </ComposerPrimitive.Root>
+      <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 p-4">
+        <div ref={containerRef} className="relative flex-1">
+          {shouldShow && (
+            <SkillAutocomplete
+              skills={skills}
+              filter={inputValue}
+              selectedIndex={selectedIndex}
+              onSelect={selectSkill}
+            />
+          )}
+          <ComposerPrimitive.Input
+            placeholder="Ask something... (/ for skills)"
+            className="min-h-[40px] w-full resize-none rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-blue-500"
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+          />
+        </div>
+        {onOpenToolFilter && (
+          <button
+            type="button"
+            onClick={onOpenToolFilter}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
+            title="Filter MCP tools"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 8 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L2.659 6.22A2.25 2.25 0 0 1 2 4.629V2.34a.75.75 0 0 1 .628-.74Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
+        {isRunning && inputValue.trim() ? (
+          <button
+            type="button"
+            onClick={queueMessage}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-700 text-neutral-300 transition-colors hover:bg-neutral-600"
+            title="Queue message (sends after current response)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-13a.75.75 0 0 0-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 0 0 0-1.5h-3.25V5Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        ) : (
+          <ComposerPrimitive.Send className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-500 disabled:opacity-40">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-5 w-5"
+            >
+              <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.635a.75.75 0 0 0 0-1.403L3.105 2.288Z" />
+            </svg>
+          </ComposerPrimitive.Send>
+        )}
+      </ComposerPrimitive.Root>
+    </div>
   );
 }
 
