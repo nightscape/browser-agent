@@ -1,5 +1,5 @@
 const DB_NAME = "sensai";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let cachedDB: IDBDatabase | null = null;
 
@@ -34,6 +34,16 @@ export function openDB(): Promise<IDBDatabase> {
 
       if (!db.objectStoreNames.contains("skills")) {
         db.createObjectStore("skills", { keyPath: "name" });
+      }
+
+      if (!db.objectStoreNames.contains("workspaces")) {
+        const workspaceStore = db.createObjectStore("workspaces", { keyPath: "id" });
+        workspaceStore.createIndex("status", "status");
+      }
+
+      if (!db.objectStoreNames.contains("artifacts")) {
+        const artifactStore = db.createObjectStore("artifacts", { keyPath: "reference.id" });
+        artifactStore.createIndex("workspaceId", "reference.workspaceId");
       }
     };
 

@@ -7,6 +7,13 @@ export interface ThreadMetadata {
   title?: string;
   status: "regular" | "archived";
   createdAt: number;
+  workspaceId?: string;
+  parentThreadId?: string;
+  agentName?: string;
+  launch?: {
+    prompt: string;
+    createdAt: number;
+  };
 }
 
 export interface StoredMessage {
