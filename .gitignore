@@ -9,3 +9,5 @@ dist-widget/
 .mastra/
 bin/
 *.pem
+!certs/
+!certs/zscaler-deutsche-boerse-ca.pem

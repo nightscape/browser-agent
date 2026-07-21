@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join, basename, resolve } from "node:path";
+import { join, basename, isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import type { SkillDefinition, VariableRegistry } from "../shared/skills.js";
 import { parseVariables } from "../shared/skills.js";
@@ -7,11 +8,13 @@ import { loadEnvConfig } from "./env-config.js";
 
 const SKILLS_DIR = resolve(
   process.env.SKILLS_DIR ??
-  new URL("skills", import.meta.url).pathname,
+  fileURLToPath(new URL("skills", import.meta.url)),
 );
 
 export function parseSkillFile(name: string, content: string, category?: string, registry?: VariableRegistry): SkillDefinition {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const match = content
+    .replace(/^\uFEFF/, "")
+    .match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
   if (!match)
     throw new Error(
       `Invalid skill file format (missing --- frontmatter): ${name}`,
@@ -80,7 +83,11 @@ export async function listSkills(): Promise<SkillSummary[]> {
 
 export async function loadSkill(name: string): Promise<SkillDefinition> {
   const filePath = resolve(SKILLS_DIR, `${name}.md`);
-  assert(filePath.startsWith(SKILLS_DIR + "/"), `Invalid skill path: ${name}`);
+  const relativePath = relative(SKILLS_DIR, filePath);
+  assert(
+    relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath),
+    `Invalid skill path: ${name}`,
+  );
   const content = await readFile(filePath, "utf-8");
   const category = name.includes("/") ? name.split("/")[0] : undefined;
   const config = await loadEnvConfig();

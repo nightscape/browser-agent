@@ -24,6 +24,9 @@ export interface PredefinedMcpServer {
   url: string;
   tokenUrl?: string;
   toolFilter?: string[];
+  label?: string;
+  credentialLabel?: string;
+  credentialDescription?: string;
 }
 
 export interface McpServerEntry {

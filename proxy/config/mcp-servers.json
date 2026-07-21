@@ -1,10 +1,16 @@
 {
   "atlassian": {
     "url": "http://mcp-atlassian:8080/mcp",
-    "tokenUrl": "https://id.atlassian.com/manage-profile/security/api-tokens"
+    "tokenUrl": "https://id.atlassian.com/manage-profile/security/api-tokens",
+    "label": "Jira & Confluence",
+    "credentialLabel": "Atlassian API token",
+    "credentialDescription": "One token connects both Jira and Confluence through the shared Atlassian MCP server."
   },
   "github": {
     "url": "http://mcp-github:8082/mcp",
-    "tokenUrl": "https://github.com/settings/tokens"
+    "tokenUrl": "https://github.com/settings/tokens",
+    "label": "GitHub",
+    "credentialLabel": "GitHub personal access token",
+    "credentialDescription": "Used by the GitHub MCP server for repository, issue, and pull request tools."
   }
 }

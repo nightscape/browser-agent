@@ -3,21 +3,24 @@ import {
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
+  useAui,
   useComposerRuntime,
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
+import { FileText, Paperclip, Plus, Send, X } from "lucide-react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
 
 interface ThreadProps {
   skills: SkillDefinition[];
   onActivateSkill: (skillName: string) => void;
+  variant?: "standalone" | "widget";
 }
 
-const UserMessage = () => (
+const UserMessage = ({ variant }: { variant: "standalone" | "widget" }) => (
   <MessagePrimitive.Root className="mb-4 flex justify-end">
-    <div className="max-w-[80%] rounded-2xl bg-blue-600 px-4 py-2.5 text-white">
+    <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-xs font-normal leading-relaxed ${variant === "standalone" ? "border border-[#00CE7D]/30 bg-[#00454D]/65 text-[#F3F3F3] shadow-md" : "bg-blue-600 text-white"}`}>
       <MessagePrimitive.Content />
     </div>
   </MessagePrimitive.Root>
@@ -50,33 +53,33 @@ const ToolFallback: ToolCallMessagePartComponent = ({
   const isRunning = status.type === "running";
 
   return (
-    <div className="my-2 rounded-lg border border-neutral-700 bg-neutral-900 text-sm not-prose">
+    <div className="my-2 rounded-lg border border-[#2d236b]/60 bg-[#100b2b]/65 text-sm not-prose">
       <button
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-neutral-800 rounded-lg"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-[#201751]"
         onClick={() => setExpanded(!expanded)}
       >
         {isRunning ? (
-          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-500 border-t-blue-400" />
+          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#2d236b] border-t-[#00CE7D]" />
         ) : (
-          <span className="text-green-600 dark:text-green-400 text-xs">&#10003;</span>
+          <span className="text-xs text-[#00CE7D]">&#10003;</span>
         )}
-        <span className="font-mono text-neutral-300">{toolName}</span>
-        <span className="ml-auto text-neutral-500 text-xs">
+        <span className="font-mono text-[#DCDCDC]">{toolName}</span>
+        <span className="ml-auto text-xs text-[#DCDCDC]/50">
           {expanded ? "▲" : "▼"}
         </span>
       </button>
       {expanded && (
-        <div className="border-t border-neutral-700 px-3 py-2 space-y-2">
+        <div className="space-y-2 border-t border-[#2d236b]/60 px-3 py-2">
           <div>
-            <p className="text-xs text-neutral-400 mb-1">Arguments</p>
-            <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400">
+            <p className="mb-1 text-xs text-[#DCDCDC]/60">Arguments</p>
+            <pre className="whitespace-pre-wrap break-all text-xs text-[#DCDCDC]/70">
               {argsText}
             </pre>
           </div>
           {result !== undefined && (
             <div>
-              <p className="text-xs text-neutral-400 mb-1">Result</p>
-              <pre className="whitespace-pre-wrap break-all text-xs text-neutral-400 max-h-64 overflow-y-auto">
+              <p className="mb-1 text-xs text-[#DCDCDC]/60">Result</p>
+              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all text-xs text-[#DCDCDC]/70">
                 {typeof result === "string"
                   ? result
                   : JSON.stringify(result, null, 2)}
@@ -89,9 +92,9 @@ const ToolFallback: ToolCallMessagePartComponent = ({
   );
 };
 
-const AssistantMessage = () => (
+const AssistantMessage = ({ variant }: { variant: "standalone" | "widget" }) => (
   <MessagePrimitive.Root className="mb-4">
-    <div className="max-w-[80%] rounded-2xl bg-neutral-800 px-4 py-2.5 text-neutral-100 prose dark:prose-invert prose-sm max-w-none">
+    <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-xs font-normal leading-relaxed prose prose-sm max-w-none dark:prose-invert ${variant === "standalone" ? "border border-[#2d236b]/60 bg-[#100b2b]/65 text-[#DCDCDC]" : "bg-neutral-800 text-neutral-100"}`}>
       <MessagePrimitive.Parts
         components={{
           Text: StreamdownText,
@@ -101,6 +104,35 @@ const AssistantMessage = () => (
     </div>
   </MessagePrimitive.Root>
 );
+
+function StandaloneWelcome() {
+  const composerRuntime = useComposerRuntime();
+  const suggestions = [
+    { label: "Create data product", prompt: "Create a new data product for Marketing Analytics" },
+    { label: "Create data product (POC available)", prompt: "Create a new data product using an available POC" },
+    { label: "Report issue", prompt: "Report an issue: Data quality review test failed" },
+    { label: "Enhance existing data product", prompt: "Enhance an existing data product with additional attributes" },
+    { label: "Request data product retirement", prompt: "Request retirement of a data product" },
+  ];
+
+  const sendSuggestion = (prompt: string) => {
+    composerRuntime.setText(prompt);
+    composerRuntime.send();
+  };
+
+  return (
+    <div className="dpl-welcome-message">
+      <div className="dpl-welcome-bubble">
+        <p>I can help you create, manage, scale, and troubleshoot your data products. To get started, please <strong>select one of the intents below</strong> or type your request directly in the chat!</p>
+        <div className="dpl-intent-suggestions">
+          {suggestions.map(({ label, prompt }) => (
+            <button key={label} type="button" onClick={() => sendSuggestion(prompt)}>{label}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SkillAutocomplete({
   skills,
@@ -145,12 +177,25 @@ function SkillAutocomplete({
   );
 }
 
-function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void }) {
+const ALLOWED_ATTACHMENT_EXTENSIONS = [".json", ".ipynb", ".txt"];
+
+function isAllowedAttachment(file: File) {
+  return ALLOWED_ATTACHMENT_EXTENSIONS.some((extension) =>
+    file.name.toLowerCase().endsWith(extension),
+  );
+}
+
+function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void; variant: "standalone" | "widget" }) {
   const composerRuntime = useComposerRuntime();
   const [inputValue, setInputValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [showAttachmentConfirmation, setShowAttachmentConfirmation] = useState(false);
+  const [confirmedSafeFile, setConfirmedSafeFile] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isSlashQuery = inputValue.startsWith("/") && !inputValue.includes(" ");
   const query = isSlashQuery ? inputValue.slice(1).toLowerCase() : "";
@@ -195,6 +240,32 @@ function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onAc
     setSelectedIndex(0);
   }, []);
 
+  const openFilePicker = () => {
+    setShowAttachmentConfirmation(false);
+    setConfirmedSafeFile(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    const validFiles = selectedFiles.filter(isAllowedAttachment);
+
+    if (validFiles.length !== selectedFiles.length) {
+      setAttachmentError("Only JSON, Jupyter Notebook, and text files can be attached.");
+    } else {
+      setAttachmentError("");
+    }
+
+    if (validFiles.length > 0) {
+      setAttachments((current) => [
+        ...current,
+        ...validFiles.filter((file) => !current.some((attachment) => attachment.name === file.name && attachment.size === file.size)),
+      ]);
+    }
+
+    event.target.value = "";
+  };
+
   // Keep inputValue in sync when composer is cleared externally
   useEffect(() => {
     return composerRuntime.subscribe(() => {
@@ -207,60 +278,122 @@ function Composer({ skills, onActivateSkill }: { skills: SkillDefinition[]; onAc
   }, [composerRuntime]);
 
   return (
-    <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 border-t border-neutral-800 bg-neutral-900 p-4">
-      <div ref={containerRef} className="relative flex-1">
-        {shouldShow && (
-          <SkillAutocomplete
-            skills={skills}
-            filter={inputValue}
-            selectedIndex={selectedIndex}
-            onSelect={selectSkill}
-          />
-        )}
-        <ComposerPrimitive.Input
-          placeholder="Ask something... (/ for skills)"
-          className="min-h-[40px] w-full resize-none rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-blue-500"
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
+    <>
+      <ComposerPrimitive.Root className={`relative flex w-full items-end gap-2 border-t p-3 ${variant === "standalone" ? "border-[#2d236b]/60 bg-[#1b1444]/45" : "mx-auto max-w-3xl border-neutral-800 bg-neutral-900 p-4"}`}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,.ipynb,.txt,application/json,text/plain"
+          multiple
+          className="hidden"
+          onChange={handleFileSelection}
         />
-      </div>
-      <ComposerPrimitive.Send className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-500 disabled:opacity-40">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className="h-5 w-5"
+        <button
+          type="button"
+          aria-label="Attach a file"
+          title="Attach JSON, Jupyter Notebook, or text file"
+          onClick={() => {
+            setAttachmentError("");
+            setShowAttachmentConfirmation(true);
+          }}
+          className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border transition-colors ${variant === "standalone" ? "border-[#2d236b]/60 bg-[#100b2b]/65 text-[#00CE7D] hover:border-[#00CE7D] hover:bg-[#00454D]/65" : "border-neutral-700 bg-neutral-800 text-neutral-200 hover:border-blue-500"}`}
         >
-          <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.635a.75.75 0 0 0 0-1.403L3.105 2.288Z" />
-        </svg>
-      </ComposerPrimitive.Send>
-    </ComposerPrimitive.Root>
+          <Paperclip className="h-3.5 w-3.5" />
+        </button>
+        <div ref={containerRef} className="relative flex-1">
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {attachments.map((file) => (
+                <span key={`${file.name}-${file.size}`} className={`inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[10px] ${variant === "standalone" ? "border-[#00CE7D]/35 bg-[#00454D]/40 text-[#F3F3F3]" : "border-neutral-700 bg-neutral-800 text-neutral-100"}`}>
+                  <FileText className="h-3 w-3 shrink-0 text-[#00CE7D]" />
+                  <span className="max-w-44 truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => setAttachments((current) => current.filter((attachment) => attachment !== file))}
+                    className="rounded p-0.5 text-[#DCDCDC]/70 hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {shouldShow && (
+            <SkillAutocomplete
+              skills={skills}
+              filter={inputValue}
+              selectedIndex={selectedIndex}
+              onSelect={selectSkill}
+            />
+          )}
+          <ComposerPrimitive.Input
+            placeholder={variant === "standalone" ? "Ask a question or describe what you need..." : "Ask something... (/ for skills)"}
+            className={`min-h-[38px] w-full resize-none rounded-xl border px-3 py-2 text-[10.5px] font-normal leading-relaxed outline-none ${variant === "standalone" ? "border-[#2d236b]/60 bg-[#100b2b]/65 text-[#F3F3F3] placeholder:text-[#DCDCDC]/45 focus:border-[#00CE7D]" : "border-neutral-700 bg-neutral-800 text-neutral-100 placeholder:text-neutral-500 focus:border-blue-500"}`}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+          />
+          {attachmentError && <p className="mt-1 text-[10px] text-[#FFAAA1]">{attachmentError}</p>}
+        </div>
+        <ComposerPrimitive.Send aria-label="Send message" className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg text-white transition-colors disabled:opacity-40 ${variant === "standalone" ? "bg-[#00CE7D] text-[#100b2b] hover:bg-[#00a862]" : "bg-blue-600 hover:bg-blue-500"}`}>
+          <Send className="h-3.5 w-3.5" />
+        </ComposerPrimitive.Send>
+      </ComposerPrimitive.Root>
+
+      {showAttachmentConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="attachment-confirmation-title" className="w-full max-w-md rounded-2xl border border-[#2d236b]/60 bg-[#1b1444] p-5 text-[#F3F3F3] shadow-2xl">
+            <h2 id="attachment-confirmation-title" className="text-sm font-semibold">Confirm file attachment</h2>
+            <p className="mt-3 text-xs leading-relaxed text-[#DCDCDC]/80">
+              Do not attach files containing passwords, access tokens, private keys, or other sensitive information. Configure GitHub credentials in Settings if they are required for your workflow.
+            </p>
+            <label className="mt-4 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[#F3F3F3]">
+              <input type="checkbox" checked={confirmedSafeFile} onChange={(event) => setConfirmedSafeFile(event.target.checked)} className="mt-0.5 accent-[#00CE7D]" />
+              <span>I confirm that the selected file does not contain sensitive information.</span>
+            </label>
+            <p className="mt-3 text-[10px] text-[#DCDCDC]/55">Allowed formats: JSON, Jupyter Notebook, and text files.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowAttachmentConfirmation(false)} className="rounded-lg px-3 py-1.5 text-xs text-[#DCDCDC] hover:bg-white/10">Cancel</button>
+              <button type="button" disabled={!confirmedSafeFile} onClick={openFilePicker} className="rounded-lg bg-[#00CE7D] px-3 py-1.5 text-xs font-semibold text-[#201751] transition-colors hover:bg-[#A0DCC8] disabled:cursor-not-allowed disabled:opacity-40">Choose file</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-export function Thread({ skills, onActivateSkill }: ThreadProps) {
+export function Thread({ skills, onActivateSkill, variant = "widget" }: ThreadProps) {
+  const aui = useAui();
+
   return (
-    <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
+    <ThreadPrimitive.Root className={`flex h-full min-h-0 flex-col ${variant === "standalone" ? "dpl-panel overflow-hidden" : ""}`}>
+      {variant === "standalone" && (
+        <div className="dpl-chat-heading">
+          <div className="dpl-chat-heading-copy"><span aria-hidden="true">👋</span><p>Hi Natali! I&apos;m your Data Product Lifecycle Assistant.</p></div>
+          <button type="button" className="dpl-new-chat-button" onClick={() => aui.threads().switchToNewThread()}>
+            <Plus className="h-3.5 w-3.5" /> New Chat
+          </button>
+        </div>
+      )}
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-8">
+        <div className={`mx-auto max-w-3xl px-4 py-8 ${variant === "standalone" ? "min-h-full" : ""}`}>
           <ThreadPrimitive.Empty>
-            <div className="flex h-full items-center justify-center pt-32">
-              <div className="text-center">
-                <h1 className="mb-2 text-2xl font-semibold text-neutral-200">
-                  SensAI
-                </h1>
-                <p className="text-neutral-500">
-                  Ask anything about your tools and projects.
-                </p>
+            {variant === "standalone" ? <StandaloneWelcome /> : (
+              <div className="flex h-full items-center justify-center pt-24">
+                <div className="text-center">
+                  <h1 className="mb-2 text-2xl font-semibold text-neutral-200">SensAI</h1>
+                  <p className="text-neutral-500">Ask anything about your tools and projects.</p>
+                </div>
               </div>
-            </div>
+            )}
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages
-            components={{ UserMessage, AssistantMessage }}
+            components={{ UserMessage: () => <UserMessage variant={variant} />, AssistantMessage: () => <AssistantMessage variant={variant} /> }}
           />
         </div>
       </ThreadPrimitive.Viewport>
-      <Composer skills={skills} onActivateSkill={onActivateSkill} />
+      <Composer skills={skills} onActivateSkill={onActivateSkill} variant={variant} />
     </ThreadPrimitive.Root>
   );
 }

@@ -20,24 +20,21 @@ test.describe("SensAI App (normal page)", () => {
     await expect(page).toHaveTitle("SensAI");
   });
 
-  test("two-column layout renders", async ({ page }) => {
-    const grid = page.locator('[class*="grid-cols-"]');
-    await expect(grid).toBeVisible();
+  test("DPL lifecycle workspace renders", async ({ page }) => {
+    await expect(page.getByRole("heading", { name: "Lifecycle Tracker" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Requested Processes" })).toBeVisible();
   });
 
-  test("thread list sidebar is visible with new-thread button", async ({
+  test("recent chats sidebar has a new-thread button", async ({
     page,
   }) => {
-    // ThreadList has SensAI header + a "+" button (ThreadListPrimitive.New)
-    const sidebar = page.locator('[class*="grid-cols-"] > :first-child');
-    await expect(sidebar).toBeVisible();
-    // The "+" button contains an SVG with a plus icon
-    const newButton = sidebar.locator("button").filter({ has: page.locator("svg") }).first();
-    await expect(newButton).toBeVisible();
+    await expect(page.getByText("Recent Chats", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New conversation" })).toBeVisible();
   });
 
   test("empty thread state shows welcome message", async ({ page }) => {
-    await expectThreadEmpty(page);
+    await expect(page.getByRole("heading", { name: "Data Product Lifecycle Assistant" })).toBeVisible();
+    await expect(page.getByText("Ask about your data products, GitHub projects, Jira work, or Confluence knowledge.")).toBeVisible();
   });
 
   test("composer is visible and editable", async ({ page }) => {
@@ -55,6 +52,8 @@ test.describe("SensAI App (normal page)", () => {
   test("settings dialog opens on click", async ({ page }) => {
     await settingsButton(page).click();
     await expect(page.getByText("Provider").first()).toBeVisible();
+    await expect(page.locator('[aria-label="GitHub personal access token"]')).toBeVisible();
+    await expect(page.locator('[aria-label="Atlassian API token"]')).toBeVisible();
   });
 
   test("can type in composer", async ({ page }) => {

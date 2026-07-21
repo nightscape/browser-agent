@@ -1,11 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import type { AgentDefinition } from "../shared/types.js";
 
 const AGENTS_DIR =
   process.env.AGENTS_DIR ??
-  new URL("agents", import.meta.url).pathname;
+  fileURLToPath(new URL("agents", import.meta.url));
 
 export async function listAgents(): Promise<
   { name: string; description: string }[]

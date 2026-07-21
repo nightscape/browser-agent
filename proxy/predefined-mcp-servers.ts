@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 export interface McpServerEntry {
   url: string;
@@ -32,7 +33,7 @@ async function loadRawConfig(): Promise<string | null> {
 
   const configPath =
     process.env.MCP_SERVERS_CONFIG ??
-    new URL("config/mcp-servers.json", import.meta.url).pathname;
+    fileURLToPath(new URL("config/mcp-servers.json", import.meta.url));
 
   try {
     return await readFile(configPath, "utf-8");

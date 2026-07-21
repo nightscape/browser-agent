@@ -19,6 +19,8 @@ import { SkillEditorDialog } from "./components/SkillEditorDialog";
 import { WidgetHeader } from "./components/WidgetHeader";
 import { PageContextBar } from "./components/PageContextBar";
 import { WidgetThreadDrawer } from "./components/WidgetThreadDrawer";
+import { LifecycleDashboard, RequestedProcesses } from "./components/LifecycleDashboard";
+import { Bell, Download, HelpCircle, Settings as SettingsIcon } from "lucide-react";
 import {
   loadSettings,
   saveSettings,
@@ -114,6 +116,7 @@ function AppInner({
   onActivateSkill,
   onNewSkill,
   onOpenSettings,
+  onOpenExportImport,
   sendRef,
 }: {
   settings: Settings;
@@ -125,10 +128,12 @@ function AppInner({
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
   onOpenSettings: () => void;
+  onOpenExportImport: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedRequestName, setSelectedRequestName] = useState("C7");
   const sidebarSkills = useMemo(
     () => skills.filter((s) => !s.urlPatterns || s.urlPatterns.length === 0),
     [skills],
@@ -182,16 +187,30 @@ function AppInner({
           />
         </div>
       ) : (
-        <div className="grid h-dvh grid-cols-[260px_1fr]">
-          <ThreadList
-            skills={sidebarSkills}
-            onSkillClick={onActivateSkill}
-            onNewSkill={onNewSkill}
-          />
-          <Thread
-            skills={skills}
-            onActivateSkill={onActivateSkill}
-          />
+        <div className="dpl-app">
+          <header className="dpl-header">
+            <div className="dpl-brand">
+              <span className="dpl-brand-icon"><img src="/logo.png" alt="Eurex logo" /></span>
+              <div><h1>Data Product Lifecycle Assistant</h1><p>AI-powered guidance for your data product journey</p></div>
+            </div>
+            <div className="dpl-header-actions">
+              <button aria-label="Notifications" className="dpl-icon-button" title="Notifications"><Bell size={17} /></button>
+              <button aria-label="Export or import settings" className="dpl-icon-button" onClick={onOpenExportImport} title="Export / Import"><Download size={17} /></button>
+              <button aria-label="Help" className="dpl-icon-button" title="Help"><HelpCircle size={17} /></button>
+              <button aria-label="Open settings" className="dpl-icon-button" onClick={onOpenSettings} title="Settings"><SettingsIcon size={17} /></button>
+              <div className="dpl-user"><span className="dpl-avatar">NK</span><span className="dpl-user-name">Natali Karlova-Bourbonus</span></div>
+            </div>
+          </header>
+          <div className="dpl-workspace">
+            <div className="dpl-chat-area">
+              <aside className="dpl-sidebar">
+                <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} variant="standalone" showSkills={false} />
+              </aside>
+              <main className="min-h-0"><Thread skills={skills} onActivateSkill={onActivateSkill} variant="standalone" /></main>
+            </div>
+            <LifecycleDashboard selectedRequestName={selectedRequestName} />
+            <RequestedProcesses selectedRequestName={selectedRequestName} onSelectRequest={setSelectedRequestName} />
+          </div>
         </div>
       )}
     </AssistantRuntimeProvider>
@@ -209,6 +228,8 @@ export function App() {
 function AppRoot() {
   const { isWidget, pageContext } = useWidgetMode();
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
@@ -249,54 +270,81 @@ function AppRoot() {
   }, [settings?.theme]);
 
   useEffect(() => {
-    Promise.all([
-      loadSettings(),
-      fetch("/api/config").then((r) => r.json()) as Promise<EnvConfig>,
-      fetch("/api/agents").then((r) => r.json()) as Promise<AgentDefinition[]>,
-      fetch("/api/mcp-servers/predefined").then((r) => r.json()),
-      fetch("/api/skills").then((r) => r.json()) as Promise<{ name: string; description: string }[]>,
-      listUserSkills(),
-    ]).then(([s, config, agentList, mcpServers, serverSkillSummaries, userSkills]) => {
+    let cancelled = false;
+
+    const fetchJson = async <T,>(url: string): Promise<T> => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`${url} returned ${response.status}`);
+      }
+      return response.json() as Promise<T>;
+    };
+
+    const initialize = async () => {
+      try {
+        setStartupError(null);
+        const [s, config, agentList, mcpServers, serverSkillSummaries, userSkills] = await Promise.all([
+          loadSettings(),
+          fetchJson<EnvConfig>("/api/config"),
+          fetchJson<AgentDefinition[]>("/api/agents"),
+          fetchJson<Record<string, PredefinedMcpServer>>("/api/mcp-servers/predefined"),
+          fetchJson<{ name: string; description: string }[]>("/api/skills"),
+          listUserSkills(),
+        ]);
+
+        const serverSkills = await Promise.all(
+          serverSkillSummaries.map((sk) =>
+            fetchJson<SkillDefinition>(`/api/skills/${sk.name}`),
+          ),
+        );
+
+        if (cancelled) return;
+
       setEnvConfig(config);
       setAgents(agentList);
       setPredefinedMcpServers(mcpServers);
 
-      // Merge skills: fetch full definitions for server skills, then overlay user skills
-      Promise.all(
-        serverSkillSummaries.map((sk: { name: string }) =>
-          fetch(`/api/skills/${sk.name}`).then((r) => r.json()) as Promise<SkillDefinition>,
-        ),
-      ).then((serverSkills) => {
+        // Merge skills: server definitions first, then user skills override them.
         const merged = new Map<string, SkillDefinition>();
         for (const sk of serverSkills) merged.set(sk.name, sk);
         for (const sk of userSkills) merged.set(sk.name, sk);
         setSkills(Array.from(merged.values()));
-      });
 
-      // Apply env config defaults to settings if they haven't been customised
-      const defaultProvider = config.providers[0]?.id;
-      const defaultModel = config.providers[0]?.models[0];
-      if (defaultProvider && s.provider === "anthropic" && defaultProvider !== "anthropic") {
-        s.provider = defaultProvider;
-      }
-      if (defaultModel && s.model === "claude-sonnet-4-20250514" && defaultModel !== "claude-sonnet-4-20250514") {
-        s.model = defaultModel;
-      }
-      if (config.defaultAgent && !s.activeAgent) {
-        s.activeAgent = config.defaultAgent;
-      }
-      for (const [key, value] of Object.entries(config.templateVars)) {
-        if (!(key in s.templateVars)) {
-          s.templateVars[key] = value;
+        // Apply env config defaults to settings if they haven't been customised.
+        const defaultProvider = config.providers[0]?.id;
+        const defaultModel = config.providers[0]?.models[0];
+        if (defaultProvider && s.provider === "anthropic" && defaultProvider !== "anthropic") {
+          s.provider = defaultProvider;
+        }
+        if (defaultModel && s.model === "claude-sonnet-4-20250514" && defaultModel !== "claude-sonnet-4-20250514") {
+          s.model = defaultModel;
+        }
+        if (config.defaultAgent && !s.activeAgent) {
+          s.activeAgent = config.defaultAgent;
+        }
+        for (const [key, value] of Object.entries(config.templateVars)) {
+          if (!(key in s.templateVars)) {
+            s.templateVars[key] = value;
+          }
+        }
+
+        setSettings(s);
+        if (!s.apiKey && s.provider !== "lmstudio") {
+          setShowSettings(true);
+        }
+      } catch (error) {
+        console.error("Failed to initialize SensAI", error);
+        if (!cancelled) {
+          setStartupError("Unable to load the assistant configuration. Check the development server and try again.");
         }
       }
+    };
 
-      setSettings(s);
-      if (!s.apiKey && s.provider !== "lmstudio") {
-        setShowSettings(true);
-      }
-    });
-  }, []);
+    void initialize();
+    return () => {
+      cancelled = true;
+    };
+  }, [startupAttempt]);
 
   const handleActivateSkill = useCallback(
     (skillName: string) => {
@@ -341,8 +389,16 @@ function AppRoot() {
 
   if (!settings) {
     return (
-      <div className="flex h-dvh items-center justify-center text-neutral-500">
-        Loading...
+      <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-[#0c0822] px-6 text-center text-[#DCDCDC]">
+        <p>{startupError ?? "Loading..."}</p>
+        {startupError && (
+          <button
+            onClick={() => setStartupAttempt((attempt) => attempt + 1)}
+            className="rounded-lg bg-[#00CE7D] px-4 py-2 text-sm font-semibold text-[#100b2b] hover:bg-[#00a862]"
+          >
+            Retry
+          </button>
+        )}
       </div>
     );
   }
@@ -350,43 +406,6 @@ function AppRoot() {
   return (
     <>
       <div className="relative h-dvh">
-        {!isWidget && (
-          <div className="absolute right-4 top-3 z-10 flex gap-1">
-          <button
-            onClick={() => setShowExportImport(true)}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
-            title="Export / Import"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="h-5 w-5"
-            >
-              <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-              <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
-            title="Settings"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="h-5 w-5"
-            >
-              <path
-                fillRule="evenodd"
-                d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
-          </div>
-        )}
         <AppInner
           settings={settings}
           agents={agents}
@@ -396,6 +415,7 @@ function AppRoot() {
           urlContext={urlContext}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenExportImport={() => setShowExportImport(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
         />

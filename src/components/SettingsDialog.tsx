@@ -151,38 +151,15 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-900 p-6">
-        <h2 className="mb-4 text-lg font-semibold text-neutral-100">
+      <div className="dpl-settings-dialog max-h-[70vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#2d236b]/60 bg-[#1b1444] p-5 text-[#F3F3F3] shadow-2xl">
+        <h2 className="mb-1 text-lg font-semibold text-[#F3F3F3]">
           Settings
         </h2>
-
-        {/* ── Theme toggle ───────────────────────────────────────── */}
-        <div className="mb-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-400">Theme</span>
-            <div className="flex gap-2">
-              {(["dark", "light"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setDraft({ ...draft, theme: t })}
-                  className={`rounded-lg px-3 py-1.5 text-sm capitalize ${
-                    draft.theme === t
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </label>
-        </div>
-
-        <hr className="my-4 border-neutral-800" />
+        <p className="mb-3 text-xs text-[#DCDCDC]/60">Model and connection settings are saved locally in this browser.</p>
 
         {/* ── Agent selector ──────────────────────────────────────── */}
         {agents.length > 0 && (
-          <div className="mb-4">
+          <div className="mb-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-neutral-400">Agent</span>
               <select
@@ -211,7 +188,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           </div>
         )}
 
-        <hr className="my-4 border-neutral-800" />
+        <hr className="my-3 border-[#2d236b]/60" />
 
         {/* ── LLM settings ────────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
@@ -335,7 +312,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
               <span className="text-xs text-neutral-400">GitHub Authentication</span>
               {hasCopilotToken ? (
                 <div className="flex items-center gap-2">
-                  <span className="rounded-lg border border-green-300 dark:border-green-800 bg-green-100/30 dark:bg-green-900/30 px-3 py-2 text-sm text-green-700 dark:text-green-400">
+                  <span className="dpl-authenticated rounded-lg border border-green-300 dark:border-green-800 bg-green-100/30 dark:bg-green-900/30 px-3 py-2 text-sm text-green-700 dark:text-green-400">
                     Authenticated
                   </span>
                   <button
@@ -393,7 +370,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           )}
         </div>
 
-        <hr className="my-4 border-neutral-800" />
+        <hr className="my-4 border-[#2d236b]/60" />
 
         {/* ── Summary model (for large tool results) ──────────────── */}
         <h3 className="mb-2 text-sm font-semibold text-neutral-200">
@@ -429,12 +406,13 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           </label>
         </div>
 
-        <hr className="my-4 border-neutral-800" />
+        <hr className="my-4 border-[#2d236b]/60" />
 
         {/* ── MCP Servers ─────────────────────────────────────────── */}
-        <h3 className="mb-2 text-sm font-semibold text-neutral-200">
-          MCP Servers
+        <h3 className="mb-1 text-sm font-semibold text-[#F3F3F3]">
+          Tool credentials
         </h3>
+        <p className="mb-3 text-xs text-[#DCDCDC]/60">Tokens are stored in this browser and used only for their configured MCP connection.</p>
 
         {/* Predefined (server-side) servers — user provides token */}
         {Object.entries(predefinedMcpServers).map(([name, config]) => {
@@ -444,21 +422,19 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           return (
             <div
               key={`pre-${name}`}
-              className="mb-2 rounded-lg bg-neutral-800/50 px-3 py-2 text-sm"
+              className="mb-3 rounded-xl border border-[#2d236b]/55 bg-[#100b2b]/55 px-3 py-3 text-sm"
             >
               <div className="flex items-center gap-2">
-                <span className="text-neutral-400">
-                  {name}{" "}
-                  <span className="text-neutral-500">— {config.url}</span>
-                </span>
-                <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
-                  server
-                </span>
+                <div>
+                  <span className="font-semibold text-[#F3F3F3]">{config.label ?? name}</span>
+                  <p className="mt-0.5 text-xs text-[#DCDCDC]/60">{config.credentialDescription ?? `Connect the ${name} MCP server.`}</p>
+                </div>
               </div>
               <div className="mt-1.5 flex items-center gap-2">
                 <input
+                  aria-label={config.credentialLabel ?? `${config.label ?? name} token`}
                   type="password"
-                  placeholder="Token"
+                  placeholder={config.credentialLabel ?? "Token"}
                   value={token}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -480,14 +456,14 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                       setDraft({ ...draft, mcpServers: servers });
                     }
                   }}
-                  className="flex-1 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-blue-500"
+                  className="flex-1 rounded-lg border border-[#2d236b]/60 bg-[#100b2b] px-2 py-1.5 text-xs text-[#F3F3F3] outline-none focus:border-[#00CE7D]"
                 />
                 {config.tokenUrl && (
                   <a
                     href={config.tokenUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-300"
+                    className="shrink-0 text-xs text-[#00CE7D] hover:text-[#A0DCC8]"
                   >
                     Get token
                   </a>
@@ -514,13 +490,14 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
                       },
                     });
                   }}
-                  className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-[#2d236b]/60 bg-[#100b2b] px-2 py-1 text-xs text-[#F3F3F3] outline-none focus:border-[#00CE7D]"
                 />
               </div>
             </div>
           );
         })}
 
+        <h3 className="mb-2 mt-5 text-sm font-semibold text-[#F3F3F3]">Additional MCP servers</h3>
         {/* User-configured (non-predefined) servers */}
         {Object.entries(draft.mcpServers)
           .filter(([name]) => !(name in predefinedMcpServers))
@@ -595,7 +572,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           </button>
         </div>
 
-        <hr className="my-4 border-neutral-800" />
+        <hr className="my-4 border-[#2d236b]/60" />
 
         {/* ── Template Variables ───────────────────────────────────── */}
         <h3 className="mb-1 text-sm font-semibold text-neutral-200">
@@ -707,7 +684,7 @@ export function SettingsDialog({ settings, agents, predefinedMcpServers, envConf
           </button>
           <button
             onClick={() => { onSave(draft); onClose(); }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500"
+            className="rounded-lg bg-[#00CE7D] px-4 py-2 text-sm font-semibold text-[#100b2b] hover:bg-[#00a862]"
           >
             Save
           </button>
