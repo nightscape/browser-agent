@@ -19,6 +19,7 @@ import { resolveModel } from "./providers.js";
 import { copilotAuthRoutes } from "./copilot-auth.js";
 import { listAgents, loadAgent } from "./agents.js";
 import { listSkills, loadSkill } from "./skills.js";
+import { listForms, loadForm } from "./forms.js";
 import { loadPredefinedMcpServerUrls } from "./predefined-mcp-servers.js";
 import { loadEnvConfig } from "./env-config.js";
 import { loadContextWindows } from "./context-windows.js";
@@ -67,6 +68,11 @@ app.get("/api/skills/*", async (c) => {
   const skill = await loadSkill(name);
   return c.json(skill);
 });
+
+// ── Forms ────────────────────────────────────────────────────────────────
+app.get("/api/forms", async (c) => c.json(await listForms()));
+
+app.get("/api/forms/:name", async (c) => c.json(await loadForm(c.req.param("name"))));
 
 // ── Env-based config (providers, models, default agent) ─────────────────
 app.get("/api/config", async (c) => c.json(await loadEnvConfig()));

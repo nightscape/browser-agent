@@ -19,6 +19,11 @@ export interface SkillDefinition {
   source: "server" | "user";
 }
 
+export interface MarkdownDocument {
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
 /**
  * Test whether a URL matches any of the given glob-style patterns.
  * Supports `*` (any chars except `/`) and `**` (any chars including `/`).
@@ -37,6 +42,17 @@ export function matchesUrl(patterns: string[], url: string): boolean {
 export function displayName(skill: SkillDefinition): string {
   const slash = skill.name.lastIndexOf("/");
   return slash === -1 ? skill.name : skill.name.slice(slash + 1);
+}
+
+export function parseMarkdownDocument(content: string, name: string): MarkdownDocument {
+  const match = content
+    .replace(/^\uFEFF/, "")
+    .match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
+  if (!match) throw new Error(`Invalid Markdown format (missing --- frontmatter): ${name}`);
+
+  // Keep the YAML parser at the server boundary. Browser-owned documents are
+  // already returned as structured definitions rather than reparsed here.
+  return { frontmatter: { __yaml: match[1]! }, body: match[2]!.trim() };
 }
 
 const VARIABLE_RE = /\{\{\s*(\w+)(?:\s*\|\s*(\w+)((?:\s+"[^"]*")*))?\s*\}\}/g;
