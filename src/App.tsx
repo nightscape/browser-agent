@@ -38,6 +38,8 @@ import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from 
 import { useSystemPrompt } from "./use-system-prompt";
 import { useThreadAgent } from "./use-thread-agent";
 import { ArtifactProvider } from "./artifact-context";
+import { useArtifacts } from "./artifact-context";
+import { useArtifactTools } from "./use-artifact-tools";
 import type { FormDefinition } from "../shared/forms";
 import { FormEditorDialog } from "./components/FormEditorDialog";
 
@@ -77,6 +79,12 @@ function SystemPromptBridge({
 
 function McpToolsBridge({ settings, predefinedMcpServers }: { settings: Settings; predefinedMcpServers: Record<string, PredefinedMcpServer> }) {
   useMcpTools(settings.mcpServers, settings, predefinedMcpServers);
+  return null;
+}
+
+function ArtifactToolsBridge() {
+  const { repository, workspace } = useArtifacts();
+  useArtifactTools(repository, workspace?.id);
   return null;
 }
 
@@ -138,6 +146,7 @@ function AppInner({
   defaultSystemPrompt,
   skills,
   predefinedMcpServers,
+  envConfig,
   urlContext,
   onActivateSkill,
   onNewSkill,
@@ -153,6 +162,7 @@ function AppInner({
   defaultSystemPrompt: string;
   skills: SkillDefinition[];
   predefinedMcpServers: Record<string, PredefinedMcpServer>;
+  envConfig: EnvConfig | null;
   urlContext?: string;
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
@@ -201,7 +211,9 @@ function AppInner({
       <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
       <DelegationBridge delegateRef={delegateRef} sendRef={sendRef} />
-      <ArtifactProvider>{isWidget ? (
+      <ArtifactProvider settings={settings} envConfig={envConfig}>
+      <ArtifactToolsBridge />
+      {isWidget ? (
         <div className="flex h-dvh flex-col">
           <WidgetHeader
             onToggleThreadList={() => setDrawerOpen((o) => !o)}
@@ -245,7 +257,8 @@ function AppInner({
             <RequestedProcesses selectedRequestName={selectedRequestName} onSelectRequest={setSelectedRequestName} />
           </div>
         </div>
-      )}</ArtifactProvider>
+      )}
+      </ArtifactProvider>
     </AssistantRuntimeProvider>
   );
 }
@@ -451,6 +464,7 @@ function AppRoot() {
           defaultSystemPrompt={envConfig?.defaultSystemPrompt ?? ""}
           skills={skills}
           predefinedMcpServers={predefinedMcpServers}
+          envConfig={envConfig}
           urlContext={urlContext}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}

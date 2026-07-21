@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ArtifactReference, ArtifactRepository, Workspace } from "../shared/workspaces";
+import type { EnvConfig } from "../shared/types";
 import { BrowserArtifactRepository } from "./storage/browser-artifacts";
+import { GitHubArtifactRepository } from "./storage/github-artifacts";
+import type { Settings } from "./storage/settings";
 import { getWorkspace, putWorkspace } from "./storage/workspaces";
 
 interface ArtifactContextValue {
@@ -13,8 +16,22 @@ interface ArtifactContextValue {
 const ArtifactContext = createContext<ArtifactContextValue | null>(null);
 const DEFAULT_WORKSPACE_ID = "default";
 
-export function ArtifactProvider({ children }: { children: React.ReactNode }) {
-  const repository = useMemo(() => new BrowserArtifactRepository(), []);
+export function ArtifactProvider({
+  children,
+  settings,
+  envConfig,
+}: {
+  children: React.ReactNode;
+  settings: Settings;
+  envConfig?: EnvConfig | null;
+}) {
+  const repository = useMemo<ArtifactRepository>(() => {
+    const config = envConfig?.githubArtifactStorage;
+    const token = settings.mcpServers.github?.token;
+    return config && token
+      ? new GitHubArtifactRepository(config, token)
+      : new BrowserArtifactRepository();
+  }, [envConfig?.githubArtifactStorage, settings.mcpServers.github?.token]);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactReference[]>([]);
 
