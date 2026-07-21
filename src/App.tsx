@@ -38,6 +38,8 @@ import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from 
 import { useSystemPrompt } from "./use-system-prompt";
 import { useThreadAgent } from "./use-thread-agent";
 import { ArtifactProvider } from "./artifact-context";
+import type { FormDefinition } from "../shared/forms";
+import { FormEditorDialog } from "./components/FormEditorDialog";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -143,6 +145,8 @@ function AppInner({
   onOpenExportImport,
   sendRef,
   delegateRef,
+  forms,
+  onOpenForm,
 }: {
   settings: Settings;
   agents: AgentDefinition[];
@@ -156,6 +160,8 @@ function AppInner({
   onOpenExportImport: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
   delegateRef: React.MutableRefObject<((agentName: string, prompt: string) => Promise<void>) | null>;
+  forms: FormDefinition[];
+  onOpenForm: (form: FormDefinition) => void;
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -203,7 +209,7 @@ function AppInner({
           />
           <PageContextBar />
           <div className="flex-1 overflow-hidden">
-            <Thread skills={skills} agents={agents} onActivateSkill={onActivateSkill} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} />
+            <Thread skills={skills} forms={forms} agents={agents} onActivateSkill={onActivateSkill} onOpenForm={onOpenForm} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} />
           </div>
           <WidgetThreadDrawer
             open={drawerOpen}
@@ -233,7 +239,7 @@ function AppInner({
               <aside className="dpl-sidebar">
                 <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} variant="standalone" showSkills={false} />
               </aside>
-              <main className="min-h-0"><Thread skills={skills} agents={agents} onActivateSkill={onActivateSkill} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} variant="standalone" /></main>
+              <main className="min-h-0"><Thread skills={skills} forms={forms} agents={agents} onActivateSkill={onActivateSkill} onOpenForm={onOpenForm} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} variant="standalone" /></main>
             </div>
             <LifecycleDashboard selectedRequestName={selectedRequestName} />
             <RequestedProcesses selectedRequestName={selectedRequestName} onSelectRequest={setSelectedRequestName} />
@@ -267,6 +273,8 @@ function AppRoot() {
   const [skills, setSkills] = useState<SkillDefinition[]>([]);
   const [pendingSkill, setPendingSkill] = useState<SkillDefinition | null>(null);
   const [showSkillEditor, setShowSkillEditor] = useState(false);
+  const [forms, setForms] = useState<FormDefinition[]>([]);
+  const [openForm, setOpenForm] = useState<FormDefinition | null>(null);
   const sendRef = useRef<((text: string) => void) | null>(null);
   const delegateRef = useRef<((agentName: string, prompt: string) => Promise<void>) | null>(null);
 
@@ -311,13 +319,14 @@ function AppRoot() {
     const initialize = async () => {
       try {
         setStartupError(null);
-        const [s, config, agentList, mcpServers, serverSkillSummaries, userSkills] = await Promise.all([
+        const [s, config, agentList, mcpServers, serverSkillSummaries, userSkills, formSummaries] = await Promise.all([
           loadSettings(),
           fetchJson<EnvConfig>("/api/config"),
           fetchJson<AgentDefinition[]>("/api/agents"),
           fetchJson<Record<string, PredefinedMcpServer>>("/api/mcp-servers/predefined"),
           fetchJson<{ name: string; description: string }[]>("/api/skills"),
           listUserSkills(),
+          fetchJson<{ name: string }[]>("/api/forms"),
         ]);
 
         const serverSkills = await Promise.all(
@@ -325,6 +334,7 @@ function AppRoot() {
             fetchJson<SkillDefinition>(`/api/skills/${sk.name}`),
           ),
         );
+        const serverForms = await Promise.all(formSummaries.map((form) => fetchJson<FormDefinition>(`/api/forms/${form.name}`)));
 
         if (cancelled) return;
 
@@ -337,6 +347,7 @@ function AppRoot() {
         for (const sk of serverSkills) merged.set(sk.name, sk);
         for (const sk of userSkills) merged.set(sk.name, sk);
         setSkills(Array.from(merged.values()));
+        setForms(serverForms);
 
         // Apply env config defaults to settings if they haven't been customised.
         const defaultProvider = config.providers[0]?.id;
@@ -447,6 +458,8 @@ function AppRoot() {
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
           delegateRef={delegateRef}
+          forms={forms}
+          onOpenForm={setOpenForm}
         />
       </div>
 
@@ -469,6 +482,8 @@ function AppRoot() {
           onClose={() => setShowSkillEditor(false)}
         />
       )}
+
+      {openForm && <FormEditorDialog definition={openForm} onClose={() => setOpenForm(null)} />}
 
       {showExportImport && (
         <ExportImportDialog

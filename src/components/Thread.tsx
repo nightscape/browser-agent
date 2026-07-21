@@ -8,16 +8,19 @@ import {
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
-import { FileText, Paperclip, Plus, Send, Split, X } from "lucide-react";
+import { ClipboardList, FileText, Paperclip, Plus, Send, Split, X } from "lucide-react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
 import type { AgentDefinition } from "../../shared/types";
+import type { FormDefinition } from "../../shared/forms";
 import { useArtifacts } from "../artifact-context";
 
 interface ThreadProps {
   skills: SkillDefinition[];
+  forms: FormDefinition[];
   agents: AgentDefinition[];
   onActivateSkill: (skillName: string) => void;
+  onOpenForm: (form: FormDefinition) => void;
   onDelegate: (agentName: string, prompt: string) => Promise<void>;
   variant?: "standalone" | "widget";
 }
@@ -450,7 +453,7 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
   );
 }
 
-export function Thread({ skills, agents, onActivateSkill, onDelegate, variant = "widget" }: ThreadProps) {
+export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onDelegate, variant = "widget" }: ThreadProps) {
   const aui = useAui();
   const [showDelegate, setShowDelegate] = useState(false);
   const [agentName, setAgentName] = useState(agents[0]?.name ?? "");
@@ -469,6 +472,7 @@ export function Thread({ skills, agents, onActivateSkill, onDelegate, variant = 
               <Split className="h-3.5 w-3.5" /> Delegate
             </button>
           )}
+          {forms.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => onOpenForm(forms[0]!)}><ClipboardList className="h-3.5 w-3.5" /> Forms</button>}
         </div>
       )}
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
