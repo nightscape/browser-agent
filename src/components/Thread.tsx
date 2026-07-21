@@ -12,6 +12,7 @@ import { FileText, Paperclip, Plus, Send, Split, X } from "lucide-react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
 import type { AgentDefinition } from "../../shared/types";
+import { useArtifacts } from "../artifact-context";
 
 interface ThreadProps {
   skills: SkillDefinition[];
@@ -180,6 +181,39 @@ function SkillAutocomplete({
   );
 }
 
+function ArtifactAutocomplete({
+  filter,
+  selectedIndex,
+  onSelect,
+}: {
+  filter: string;
+  selectedIndex: number;
+  onSelect: (artifact: { id: string; name: string; path: string }) => void;
+}) {
+  const { artifacts } = useArtifacts();
+  const query = filter.slice(1).toLowerCase();
+  const matches = artifacts.filter((artifact) => artifact.name.toLowerCase().includes(query) || artifact.path.toLowerCase().includes(query));
+  if (matches.length === 0) return null;
+  return (
+    <div className="absolute bottom-full left-0 right-0 mb-1 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-lg">
+      {matches.map((artifact, index) => (
+        <button
+          key={artifact.id}
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onSelect(artifact);
+          }}
+          className={`flex w-full flex-col px-3 py-2 text-left ${index === selectedIndex % matches.length ? "bg-neutral-800" : "hover:bg-neutral-800"}`}
+        >
+          <span className="text-sm text-neutral-200">@{artifact.name}</span>
+          <span className="truncate text-xs text-neutral-400">{artifact.path}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const ALLOWED_ATTACHMENT_EXTENSIONS = [".json", ".ipynb", ".txt"];
 
 function isAllowedAttachment(file: File) {
@@ -190,6 +224,7 @@ function isAllowedAttachment(file: File) {
 
 function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinition[]; onActivateSkill: (name: string) => void; variant: "standalone" | "widget" }) {
   const composerRuntime = useComposerRuntime();
+  const { repository, workspace, refreshArtifacts } = useArtifacts();
   const [inputValue, setInputValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -197,10 +232,14 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
   const [confirmedSafeFile, setConfirmedSafeFile] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [attachmentError, setAttachmentError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isSlashQuery = inputValue.startsWith("/") && !inputValue.includes(" ");
+  const artifactMatch = inputValue.match(/(?:^|\s)@(\S*)$/);
+  const isArtifactQuery = Boolean(artifactMatch);
+  const artifactFilter = artifactMatch ? `@${artifactMatch[1]}` : "";
   const query = isSlashQuery ? inputValue.slice(1).toLowerCase() : "";
   const matches = isSlashQuery
     ? skills.filter((s) => s.name.toLowerCase().includes(query))
@@ -219,16 +258,16 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (!shouldShow) return;
+      if (!shouldShow && !isArtifactQuery) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((i) => (i + 1) % matches.length);
+        setSelectedIndex((i) => (i + 1) % Math.max(matches.length, 1));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((i) => (i - 1 + matches.length) % matches.length);
+        setSelectedIndex((i) => (i - 1 + Math.max(matches.length, 1)) % Math.max(matches.length, 1));
       } else if (e.key === "Enter") {
         e.preventDefault();
-        selectSkill(matches[selectedIndex % matches.length]!.name);
+        if (shouldShow) selectSkill(matches[selectedIndex % matches.length]!.name);
       } else if (e.key === "Escape") {
         setShowAutocomplete(false);
       }
@@ -269,6 +308,34 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
     event.target.value = "";
   };
 
+  const uploadAttachments = async (): Promise<string> => {
+    if (!workspace || attachments.length === 0) return "";
+    setUploading(true);
+    try {
+      const references = await Promise.all(attachments.map((file) => repository.write({
+        workspaceId: workspace.id,
+        path: `uploads/${crypto.randomUUID()}-${file.name}`,
+        content: file,
+        mimeType: file.type || "application/octet-stream",
+      })));
+      await refreshArtifacts();
+      setAttachments([]);
+      return references.map((reference) => `@${reference.name} (${reference.path})`).join("\n");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const sendWithAttachments = async () => {
+    try {
+      const artifactReferences = await uploadAttachments();
+      if (artifactReferences) composerRuntime.setText(`${composerRuntime.getState().text}\n\nArtifacts:\n${artifactReferences}`.trim());
+      composerRuntime.send();
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "Unable to upload attachment");
+    }
+  };
+
   // Keep inputValue in sync when composer is cleared externally
   useEffect(() => {
     return composerRuntime.subscribe(() => {
@@ -282,7 +349,13 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
 
   return (
     <>
-      <ComposerPrimitive.Root className={`relative flex w-full items-end gap-2 border-t p-3 ${variant === "standalone" ? "border-[#2d236b]/60 bg-[#1b1444]/45" : "mx-auto max-w-3xl border-neutral-800 bg-neutral-900 p-4"}`}>
+      <ComposerPrimitive.Root
+        className={`relative flex w-full items-end gap-2 border-t p-3 ${variant === "standalone" ? "border-[#2d236b]/60 bg-[#1b1444]/45" : "mx-auto max-w-3xl border-neutral-800 bg-neutral-900 p-4"}`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void sendWithAttachments();
+        }}
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -330,6 +403,17 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
               onSelect={selectSkill}
             />
           )}
+          {isArtifactQuery && (
+            <ArtifactAutocomplete
+              filter={artifactFilter}
+              selectedIndex={selectedIndex}
+              onSelect={(artifact) => {
+                const next = inputValue.replace(/@(\S*)$/, `@${artifact.name} `);
+                setInputValue(next);
+                composerRuntime.setText(next);
+              }}
+            />
+          )}
           <ComposerPrimitive.Input
             placeholder={variant === "standalone" ? "Ask a question or describe what you need..." : "Ask something... (/ for skills)"}
             className={`min-h-[38px] w-full resize-none rounded-xl border px-3 py-2 text-[10.5px] font-normal leading-relaxed outline-none ${variant === "standalone" ? "border-[#2d236b]/60 bg-[#100b2b]/65 text-[#F3F3F3] placeholder:text-[#DCDCDC]/45 focus:border-[#00CE7D]" : "border-neutral-700 bg-neutral-800 text-neutral-100 placeholder:text-neutral-500 focus:border-blue-500"}`}
@@ -338,9 +422,9 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
           />
           {attachmentError && <p className="mt-1 text-[10px] text-[#FFAAA1]">{attachmentError}</p>}
         </div>
-        <ComposerPrimitive.Send aria-label="Send message" className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg text-white transition-colors disabled:opacity-40 ${variant === "standalone" ? "bg-[#00CE7D] text-[#100b2b] hover:bg-[#00a862]" : "bg-blue-600 hover:bg-blue-500"}`}>
+        <button type="submit" aria-label="Send message" disabled={uploading} className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg text-white transition-colors disabled:opacity-40 ${variant === "standalone" ? "bg-[#00CE7D] text-[#100b2b] hover:bg-[#00a862]" : "bg-blue-600 hover:bg-blue-500"}`}>
           <Send className="h-3.5 w-3.5" />
-        </ComposerPrimitive.Send>
+        </button>
       </ComposerPrimitive.Root>
 
       {showAttachmentConfirmation && (

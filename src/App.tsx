@@ -37,6 +37,7 @@ import { WidgetProvider, useWidgetMode } from "./widget-mode";
 import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
 import { useSystemPrompt } from "./use-system-prompt";
 import { useThreadAgent } from "./use-thread-agent";
+import { ArtifactProvider } from "./artifact-context";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -194,7 +195,7 @@ function AppInner({
       <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
       <DelegationBridge delegateRef={delegateRef} sendRef={sendRef} />
-      {isWidget ? (
+      <ArtifactProvider>{isWidget ? (
         <div className="flex h-dvh flex-col">
           <WidgetHeader
             onToggleThreadList={() => setDrawerOpen((o) => !o)}
@@ -238,7 +239,7 @@ function AppInner({
             <RequestedProcesses selectedRequestName={selectedRequestName} onSelectRequest={setSelectedRequestName} />
           </div>
         </div>
-      )}
+      )}</ArtifactProvider>
     </AssistantRuntimeProvider>
   );
 }
