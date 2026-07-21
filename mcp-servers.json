@@ -1,0 +1,20 @@
+{
+    "jira": {
+    "url": "https://mcp-atlassian-024-stx-risk-applications.apps.g-dev-1.cool.dev.gcp.dbgcloud.io/mcp",
+    "tokenUrl": "https://devopsjira.deutsche-boerse.com/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens",
+    "toolFilter": [
+        "jira.*"
+    ]
+    },
+    "confluence": {
+    "url": "https://mcp-atlassian-024-stx-risk-applications.apps.g-dev-1.cool.dev.gcp.dbgcloud.io/mcp",
+    "tokenUrl": "https://knowledge.deutsche-boerse.de/plugins/personalaccesstokens/usertokens.action",
+    "toolFilter": [
+        "confluence.*"
+    ]
+    },
+    "github": {
+    "url": "https://mcp-github-024-stx-risk-applications.apps.g-dev-1.cool.dev.gcp.dbgcloud.io/mcp",
+    "tokenUrl": "https://github.deutsche-boerse.de/settings/tokens/new?description=SensAI&scopes=repo,read:org,read:project,notifications"
+    }
+}

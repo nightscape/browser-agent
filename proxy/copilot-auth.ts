@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { fetch, ProxyAgent } from "undici";
 
 const CLIENT_ID = "Iv1.b507a08c87ecfe98";
 const VSCODE_VERSION = "1.111.0";
@@ -7,6 +8,13 @@ const USER_AGENT = "GitHubCopilotChat/0.26.7";
 const API_VERSION = "2025-04-01";
 
 export const COPILOT_BASE_URL = "https://api.githubcopilot.com";
+
+const proxyUrl = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
+const githubDispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+
+function githubFetch(url: string, options?: Parameters<typeof fetch>[1]) {
+  return fetch(url, { ...options, dispatcher: githubDispatcher });
+}
 
 // ── Per-user Copilot JWT cache ──────────────────────────────────────────
 // Key: GitHub OAuth token prefix (first 16 chars) → cached Copilot JWT
@@ -29,7 +37,7 @@ async function getCopilotJwt(githubToken: string): Promise<string> {
     return cached.token;
   }
 
-  const res = await fetch(
+  const res = await githubFetch(
     "https://api.github.com/copilot_internal/v2/token",
     {
       headers: {
@@ -87,7 +95,7 @@ export const copilotAuthRoutes = new Hono();
 
 // Step 1: Start device flow → returns { user_code, verification_uri, device_code }
 copilotAuthRoutes.post("/start", async (c) => {
-  const res = await fetch("https://github.com/login/device/code", {
+  const res = await githubFetch("https://github.com/login/device/code", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -102,7 +110,7 @@ copilotAuthRoutes.post("/start", async (c) => {
 // Step 2: Poll for token → returns { access_token } or { error }
 copilotAuthRoutes.post("/poll", async (c) => {
   const { device_code } = await c.req.json<{ device_code: string }>();
-  const res = await fetch("https://github.com/login/oauth/access_token", {
+  const res = await githubFetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -121,7 +129,7 @@ copilotAuthRoutes.post("/poll", async (c) => {
 copilotAuthRoutes.post("/models", async (c) => {
   const { github_token } = await c.req.json<{ github_token: string }>();
   const headers = await copilotRequestHeaders(github_token);
-  const res = await fetch(`${COPILOT_BASE_URL}/models`, { headers });
+  const res = await githubFetch(`${COPILOT_BASE_URL}/models`, { headers });
   assert(res.ok, `Copilot models request failed: ${res.status}`);
   return c.json(await res.json());
 });

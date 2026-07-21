@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cross-env NODE_EXTRA_CA_CERTS=certs/zscaler-deutsche-boerse-ca.pem tsx watch proxy/server.ts",
+    "dev": "tsx watch --env-file=.env proxy/server.ts",
     "build": "tsc && vite build && npm run build:widget",
     "build:widget": "vite build --config vite.config.widget.ts",
     "start": "NODE_ENV=production node --import tsx proxy/server.ts",

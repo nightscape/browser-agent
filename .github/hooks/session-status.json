@@ -1,0 +1,60 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "linux": "/home/un807/agent-beacons/bin/beacon working STX.BROWSER_AGENT \"agent session started\"",
+        "env": {
+          "HTTP_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "HTTPS_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "http_proxy": "",
+          "https_proxy": "",
+          "SSL_CERT_FILE": "/home/un807/ca/combined-ca.pem"
+        },
+        "timeout": 5
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "linux": "/home/un807/agent-beacons/bin/beacon working STX.BROWSER_AGENT \"handling user request\"",
+        "env": {
+          "HTTP_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "HTTPS_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "http_proxy": "",
+          "https_proxy": "",
+          "SSL_CERT_FILE": "/home/un807/ca/combined-ca.pem"
+        },
+        "timeout": 5
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "linux": "/home/un807/agent-beacons/bin/beacon attention STX.BROWSER_AGENT \"agent context compacting\"",
+        "env": {
+          "HTTP_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "HTTPS_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "http_proxy": "",
+          "https_proxy": "",
+          "SSL_CERT_FILE": "/home/un807/ca/combined-ca.pem"
+        },
+        "timeout": 5
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "linux": "/home/un807/agent-beacons/bin/beacon ended STX.BROWSER_AGENT \"agent session ended\"",
+        "env": {
+          "HTTP_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "HTTPS_PROXY": "http://webproxy.deutsche-boerse.de:8080/",
+          "http_proxy": "",
+          "https_proxy": "",
+          "SSL_CERT_FILE": "/home/un807/ca/combined-ca.pem"
+        },
+        "timeout": 5
+      }
+    ]
+  }
+}
