@@ -36,6 +36,7 @@ import { useBrowserTools } from "./use-browser-tools";
 import { WidgetProvider, useWidgetMode } from "./widget-mode";
 import type { AgentDefinition, AgentInfo, PredefinedMcpServer, EnvConfig } from "../shared/types";
 import { useSystemPrompt } from "./use-system-prompt";
+import { useThreadAgent } from "./use-thread-agent";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -66,7 +67,8 @@ function SystemPromptBridge({
   settings: Settings;
   urlContext?: string;
 }) {
-  useSystemPrompt(defaultSystemPrompt, agents, settings.activeAgent, settings.templateVars, urlContext);
+  const threadAgent = useThreadAgent(settings.activeAgent);
+  useSystemPrompt(defaultSystemPrompt, agents, threadAgent, settings.templateVars, urlContext);
   return null;
 }
 
@@ -106,6 +108,27 @@ function SkillMessageBridge({ sendRef }: { sendRef: React.MutableRefObject<((tex
   return null;
 }
 
+function DelegationBridge({
+  delegateRef,
+  sendRef,
+}: {
+  delegateRef: React.MutableRefObject<((agentName: string, prompt: string) => Promise<void>) | null>;
+  sendRef: React.MutableRefObject<((text: string) => void) | null>;
+}) {
+  const aui = useAui();
+  delegateRef.current = useCallback(async (agentName: string, prompt: string) => {
+    const state = aui.threadListItem.source ? aui.threadListItem().getState() : null;
+    if (!state?.remoteId) return;
+    const { createChildThread, getThread } = await import("./storage/threads");
+    const parent = await getThread(state.remoteId);
+    if (!parent) return;
+    const child = await createChildThread(parent, agentName, prompt);
+    aui.threads().switchToThread(child.remoteId);
+    window.setTimeout(() => sendRef.current?.(prompt), 0);
+  }, [aui, sendRef]);
+  return null;
+}
+
 function AppInner({
   settings,
   agents,
@@ -118,6 +141,7 @@ function AppInner({
   onOpenSettings,
   onOpenExportImport,
   sendRef,
+  delegateRef,
 }: {
   settings: Settings;
   agents: AgentDefinition[];
@@ -130,6 +154,7 @@ function AppInner({
   onOpenSettings: () => void;
   onOpenExportImport: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
+  delegateRef: React.MutableRefObject<((agentName: string, prompt: string) => Promise<void>) | null>;
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -168,6 +193,7 @@ function AppInner({
       <McpToolsBridge settings={settings} predefinedMcpServers={predefinedMcpServers} />
       <BrowserToolsBridge />
       <SkillMessageBridge sendRef={sendRef} />
+      <DelegationBridge delegateRef={delegateRef} sendRef={sendRef} />
       {isWidget ? (
         <div className="flex h-dvh flex-col">
           <WidgetHeader
@@ -176,7 +202,7 @@ function AppInner({
           />
           <PageContextBar />
           <div className="flex-1 overflow-hidden">
-            <Thread skills={skills} onActivateSkill={onActivateSkill} />
+            <Thread skills={skills} agents={agents} onActivateSkill={onActivateSkill} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} />
           </div>
           <WidgetThreadDrawer
             open={drawerOpen}
@@ -206,7 +232,7 @@ function AppInner({
               <aside className="dpl-sidebar">
                 <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} variant="standalone" showSkills={false} />
               </aside>
-              <main className="min-h-0"><Thread skills={skills} onActivateSkill={onActivateSkill} variant="standalone" /></main>
+              <main className="min-h-0"><Thread skills={skills} agents={agents} onActivateSkill={onActivateSkill} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} variant="standalone" /></main>
             </div>
             <LifecycleDashboard selectedRequestName={selectedRequestName} />
             <RequestedProcesses selectedRequestName={selectedRequestName} onSelectRequest={setSelectedRequestName} />
@@ -241,6 +267,7 @@ function AppRoot() {
   const [pendingSkill, setPendingSkill] = useState<SkillDefinition | null>(null);
   const [showSkillEditor, setShowSkillEditor] = useState(false);
   const sendRef = useRef<((text: string) => void) | null>(null);
+  const delegateRef = useRef<((agentName: string, prompt: string) => Promise<void>) | null>(null);
 
   const globalVariables = useMemo(
     () => collectGlobalVariables(skills, envConfig?.variableDefinitions ?? {}),
@@ -418,6 +445,7 @@ function AppRoot() {
           onOpenExportImport={() => setShowExportImport(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
+          delegateRef={delegateRef}
         />
       </div>
 

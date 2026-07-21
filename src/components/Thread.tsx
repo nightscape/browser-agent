@@ -8,13 +8,16 @@ import {
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
-import { FileText, Paperclip, Plus, Send, X } from "lucide-react";
+import { FileText, Paperclip, Plus, Send, Split, X } from "lucide-react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
+import type { AgentDefinition } from "../../shared/types";
 
 interface ThreadProps {
   skills: SkillDefinition[];
+  agents: AgentDefinition[];
   onActivateSkill: (skillName: string) => void;
+  onDelegate: (agentName: string, prompt: string) => Promise<void>;
   variant?: "standalone" | "widget";
 }
 
@@ -363,8 +366,11 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
   );
 }
 
-export function Thread({ skills, onActivateSkill, variant = "widget" }: ThreadProps) {
+export function Thread({ skills, agents, onActivateSkill, onDelegate, variant = "widget" }: ThreadProps) {
   const aui = useAui();
+  const [showDelegate, setShowDelegate] = useState(false);
+  const [agentName, setAgentName] = useState(agents[0]?.name ?? "");
+  const [delegatePrompt, setDelegatePrompt] = useState("");
 
   return (
     <ThreadPrimitive.Root className={`flex h-full min-h-0 flex-col ${variant === "standalone" ? "dpl-panel overflow-hidden" : ""}`}>
@@ -374,6 +380,11 @@ export function Thread({ skills, onActivateSkill, variant = "widget" }: ThreadPr
           <button type="button" className="dpl-new-chat-button" onClick={() => aui.threads().switchToNewThread()}>
             <Plus className="h-3.5 w-3.5" /> New Chat
           </button>
+          {agents.length > 0 && (
+            <button type="button" className="dpl-new-chat-button" onClick={() => setShowDelegate(true)}>
+              <Split className="h-3.5 w-3.5" /> Delegate
+            </button>
+          )}
         </div>
       )}
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -394,6 +405,33 @@ export function Thread({ skills, onActivateSkill, variant = "widget" }: ThreadPr
         </div>
       </ThreadPrimitive.Viewport>
       <Composer skills={skills} onActivateSkill={onActivateSkill} variant={variant} />
+      {showDelegate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
+          <form
+            className="w-full max-w-md rounded-xl border border-neutral-700 bg-neutral-900 p-5 text-neutral-100"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onDelegate(agentName, delegatePrompt).then(() => setShowDelegate(false));
+            }}
+          >
+            <h2 className="text-base font-semibold">Delegate to agent</h2>
+            <label className="mt-4 flex flex-col gap-1 text-sm">
+              <span className="text-neutral-400">Agent</span>
+              <select value={agentName} onChange={(event) => setAgentName(event.target.value)} className="rounded border border-neutral-700 bg-neutral-800 p-2">
+                {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 flex flex-col gap-1 text-sm">
+              <span className="text-neutral-400">Task</span>
+              <textarea required value={delegatePrompt} onChange={(event) => setDelegatePrompt(event.target.value)} className="min-h-24 rounded border border-neutral-700 bg-neutral-800 p-2" />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowDelegate(false)} className="rounded px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800">Cancel</button>
+              <button type="submit" className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500">Delegate</button>
+            </div>
+          </form>
+        </div>
+      )}
     </ThreadPrimitive.Root>
   );
 }

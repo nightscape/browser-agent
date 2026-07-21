@@ -61,6 +61,27 @@ export async function putThread(thread: ThreadMetadata): Promise<void> {
   });
 }
 
+export async function createChildThread(
+  parent: ThreadMetadata,
+  agentName: string,
+  prompt: string,
+): Promise<ThreadMetadata> {
+  const now = Date.now();
+  const id = crypto.randomUUID();
+  const child: ThreadMetadata = {
+    id,
+    remoteId: id,
+    status: "regular",
+    createdAt: now,
+    workspaceId: parent.workspaceId,
+    parentThreadId: parent.remoteId,
+    agentName,
+    launch: { prompt, createdAt: now },
+  };
+  await putThread(child);
+  return child;
+}
+
 export async function deleteThread(id: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
