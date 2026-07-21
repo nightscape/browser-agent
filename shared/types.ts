@@ -12,12 +12,21 @@ export interface VariableDefinition {
   options: string[];
 }
 
+export interface GitHubArtifactStorageConfig {
+  owner: string;
+  repository: string;
+  branch: string;
+  root: string;
+  apiUrl?: string;
+}
+
 export interface EnvConfig {
   defaultAgent?: string;
   defaultSystemPrompt: string;
   providers: ProviderConfig[];
   templateVars: Record<string, string>;
   variableDefinitions: Record<string, VariableDefinition>;
+  githubArtifactStorage?: GitHubArtifactStorageConfig;
 }
 
 export interface PredefinedMcpServer {

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { EnvConfig, ProviderConfig, VariableDefinition } from "../shared/types.js";
+import type { EnvConfig, GitHubArtifactStorageConfig, ProviderConfig, VariableDefinition } from "../shared/types.js";
 
 export type { EnvConfig, ProviderConfig };
 
@@ -75,6 +75,35 @@ export async function loadEnvConfig(): Promise<EnvConfig> {
     variableDefinitions = JSON.parse(process.env.VARIABLE_DEFINITIONS);
   }
 
-  cachedConfig = { defaultAgent, defaultSystemPrompt, providers, templateVars, variableDefinitions };
+  const githubArtifactStorage = loadGitHubArtifactStorageConfig();
+  cachedConfig = {
+    defaultAgent,
+    defaultSystemPrompt,
+    providers,
+    templateVars,
+    variableDefinitions,
+    ...(githubArtifactStorage ? { githubArtifactStorage } : {}),
+  };
   return cachedConfig;
+}
+
+function loadGitHubArtifactStorageConfig(): GitHubArtifactStorageConfig | undefined {
+  const repository = process.env.GITHUB_ARTIFACT_REPOSITORY;
+  if (!repository) return undefined;
+  const [owner, name] = repository.split("/", 2);
+  if (!owner || !name) {
+    throw new Error("GITHUB_ARTIFACT_REPOSITORY must use the owner/repository format");
+  }
+  const branch = process.env.GITHUB_ARTIFACT_BRANCH;
+  const root = process.env.GITHUB_ARTIFACT_ROOT;
+  if (!branch || !root) {
+    throw new Error("GITHUB_ARTIFACT_BRANCH and GITHUB_ARTIFACT_ROOT are required with GITHUB_ARTIFACT_REPOSITORY");
+  }
+  return {
+    owner,
+    repository: name,
+    branch,
+    root,
+    ...(process.env.GITHUB_API_URL ? { apiUrl: process.env.GITHUB_API_URL } : {}),
+  };
 }
