@@ -12,33 +12,35 @@ import {
 test.describe("SensAI App (normal page)", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${SENSAI_SERVER}/`);
-    await page.waitForSelector("text=SensAI", { timeout: 10_000 });
+    await page.waitForSelector("text=Data Product Lifecycle Assistant", { timeout: 10_000 });
     await dismissSettingsDialog(page);
   });
 
   test("page has correct title", async ({ page }) => {
-    await expect(page).toHaveTitle("SensAI");
+    await expect(page).toHaveTitle("Data Product Lifecycle Assistant");
   });
 
   test("DPL lifecycle workspace renders", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "Lifecycle Tracker" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Requested Processes" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "My Requests" })).toBeVisible();
   });
 
   test("recent chats sidebar has a new-thread button", async ({
     page,
   }) => {
     await expect(page.getByText("Recent Chats", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "New conversation" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Chat" })).toBeVisible();
   });
 
   test("empty thread state shows welcome message", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "Data Product Lifecycle Assistant" })).toBeVisible();
-    await expect(page.getByText("Ask about your data products, GitHub projects, Jira work, or Confluence knowledge.")).toBeVisible();
+    await expect(page.getByText("Hi Natali! I'm your Data Product Lifecycle Assistant.")).toBeVisible();
   });
 
   test("composer is visible and editable", async ({ page }) => {
-    await expectComposerReady(page);
+    const composer = page.getByRole("textbox", { name: "Ask a question or describe what you need..." });
+    await expect(composer).toBeVisible();
+    await expect(composer).toBeEditable();
   });
 
   test("settings button is visible", async ({ page }) => {
@@ -57,7 +59,7 @@ test.describe("SensAI App (normal page)", () => {
   });
 
   test("can type in composer", async ({ page }) => {
-    const { composer } = threadLocators(page);
+    const composer = page.getByRole("textbox", { name: "Ask a question or describe what you need..." });
     await composer.fill("Hello world");
     await expect(composer).toHaveValue("Hello world");
   });
