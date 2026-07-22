@@ -91,7 +91,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
   constructor(
     private readonly config: GitHubArtifactRepositoryConfig,
     private readonly token: string,
-    private readonly request: typeof fetch = fetch,
+    private readonly request: typeof fetch = (...args) => fetch(...args),
   ) {
     if (!token) throw new Error("A GitHub token is required for remote artifact storage");
     if (!config.owner || !config.repository || !config.branch) {
