@@ -34,7 +34,9 @@ interface TreeEntry {
   path: string;
   type: "blob" | "tree";
   oid: string;
-  byteSize?: number;
+  object?: {
+    byteSize?: number;
+  };
 }
 
 interface TreeResponse {
@@ -56,6 +58,12 @@ function trimSlashes(value: string): string {
 
 function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
+}
+
+function graphQlApiUrl(restApiUrl: string): string {
+  return restApiUrl.endsWith("/api/v3")
+    ? `${restApiUrl.slice(0, -2)}graphql`
+    : `${restApiUrl}/graphql`;
 }
 
 function decodeBase64(value: string): ArrayBuffer {
@@ -85,6 +93,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
   readonly capabilities: ArtifactRepositoryCapabilities;
 
   private readonly apiUrl: string;
+  private readonly graphQlUrl: string;
   private readonly root: string;
   private readonly maxUploadSize: number;
 
@@ -100,6 +109,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
     this.root = trimSlashes(config.root);
     if (!this.root) throw new Error("GitHub artifact storage requires a permitted root path");
     this.apiUrl = (config.apiUrl ?? "https://api.github.com").replace(/\/$/, "");
+    this.graphQlUrl = graphQlApiUrl(this.apiUrl);
     this.maxUploadSize = config.maxUploadSize ?? DEFAULT_MAX_UPLOAD_SIZE;
     this.id = `github:${config.owner}/${config.repository}:${config.branch}:${this.root}`;
     this.capabilities = {
@@ -127,12 +137,19 @@ export class GitHubArtifactRepository implements ArtifactRepository {
       repository(owner: $owner, name: $repository) {
         object(expression: $expression) {
           ... on Tree {
-            entries { path type oid byteSize }
+            entries {
+              path
+              type
+              oid
+              object {
+                ... on Blob { byteSize }
+              }
+            }
           }
         }
       }
     }`;
-    const response = await this.github<TreeResponse>("/graphql", {
+    const response = await this.github<TreeResponse>("", {
       method: "POST",
       body: JSON.stringify({
         query,
@@ -142,7 +159,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
           expression: `${this.config.branch}:${workspacePath}`,
         },
       }),
-    });
+    }, this.graphQlUrl);
     if (response.errors?.length) {
       throw new Error(`GitHub artifact list failed: ${response.errors.map((error) => error.message).join("; ")}`);
     }
@@ -152,7 +169,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
       .filter((entry) => entry.type === "blob")
       .map((entry) => this.reference(workspaceId, `${workspacePath}/${entry.path}`, {
         contentSha: entry.oid,
-        size: entry.byteSize ?? 0,
+        size: entry.object?.byteSize ?? 0,
       }))
       .sort((left, right) => left.path.localeCompare(right.path));
   }
@@ -262,8 +279,8 @@ export class GitHubArtifactRepository implements ArtifactRepository {
     };
   }
 
-  private async github<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await this.request(`${this.apiUrl}${path}`, {
+  private async github<T>(path: string, init: RequestInit = {}, apiUrl = this.apiUrl): Promise<T> {
+    const response = await this.request(`${apiUrl}${path}`, {
       ...init,
       headers: {
         Accept: "application/vnd.github+json",
