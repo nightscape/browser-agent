@@ -29,7 +29,7 @@ export function ArtifactProvider({
     const config = envConfig?.githubArtifactStorage;
     const token = settings.mcpServers.github?.token;
     return config && token
-      ? new GitHubArtifactRepository(config, token)
+      ? new GitHubArtifactRepository({ ...config, proxyUrl: "/api/artifacts/github" }, token)
       : new BrowserArtifactRepository();
   }, [envConfig?.githubArtifactStorage, settings.mcpServers.github?.token]);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);

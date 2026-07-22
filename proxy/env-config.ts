@@ -28,6 +28,11 @@ When answering:
 
 let cachedConfig: EnvConfig | null = null;
 
+function normalizeGitHubRestApiUrl(value: string): string {
+  const apiUrl = value.replace(/\/$/, "");
+  return apiUrl.endsWith("/api") ? `${apiUrl}/v3` : apiUrl;
+}
+
 export async function loadEnvConfig(): Promise<EnvConfig> {
   if (cachedConfig) return cachedConfig;
 
@@ -104,6 +109,6 @@ function loadGitHubArtifactStorageConfig(): GitHubArtifactStorageConfig | undefi
     repository: name,
     branch,
     root,
-    ...(process.env.GITHUB_API_URL ? { apiUrl: process.env.GITHUB_API_URL } : {}),
+    ...(process.env.GITHUB_API_URL ? { apiUrl: normalizeGitHubRestApiUrl(process.env.GITHUB_API_URL) } : {}),
   };
 }

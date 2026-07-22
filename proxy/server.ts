@@ -77,6 +77,56 @@ app.get("/api/forms/:name", async (c) => c.json(await loadForm(c.req.param("name
 // ── Env-based config (providers, models, default agent) ─────────────────
 app.get("/api/config", async (c) => c.json(await loadEnvConfig()));
 
+// ── GitHub artifact proxy ──────────────────────────────────────────────
+// GitHub Enterprise does not grant the browser CORS access to its Contents or
+// GraphQL APIs. Keep the upstream target configuration-bound on the server.
+function githubGraphQlUrl(restApiUrl: string): string {
+  const baseUrl = restApiUrl.replace(/\/$/, "");
+  return baseUrl.endsWith("/api/v3")
+    ? `${baseUrl.slice(0, -2)}graphql`
+    : `${baseUrl}/graphql`;
+}
+
+async function proxyGitHubArtifactRequest(c: import("hono").Context, targetUrl: string) {
+  const authorization = c.req.header("Authorization");
+  if (!authorization) return c.text("Missing GitHub authorization", 401);
+
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    Authorization: authorization,
+  };
+  const contentType = c.req.header("Content-Type");
+  if (contentType) headers["Content-Type"] = contentType;
+
+  const upstream = await fetch(targetUrl, {
+    method: c.req.method,
+    headers,
+    body: c.req.method === "GET" || c.req.method === "HEAD" ? undefined : await c.req.text(),
+  });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
+    },
+  });
+}
+
+app.post("/api/artifacts/github/graphql", async (c) => {
+  const config = (await loadEnvConfig()).githubArtifactStorage;
+  if (!config) return c.text("GitHub artifact storage is not configured", 404);
+  return proxyGitHubArtifactRequest(c, githubGraphQlUrl(config.apiUrl ?? "https://api.github.com"));
+});
+
+app.all("/api/artifacts/github/rest/*", async (c) => {
+  const config = (await loadEnvConfig()).githubArtifactStorage;
+  if (!config) return c.text("GitHub artifact storage is not configured", 404);
+  const prefix = "/api/artifacts/github/rest";
+  const requestUrl = new URL(c.req.url);
+  const path = c.req.path.slice(prefix.length);
+  const targetUrl = `${(config.apiUrl ?? "https://api.github.com").replace(/\/$/, "")}${path}${requestUrl.search}`;
+  return proxyGitHubArtifactRequest(c, targetUrl);
+});
+
 // ── Widget bundle (served for bookmarklets / userscripts) ────────────────
 app.get("/sensai-widget.iife.js", async (c) => {
   return serveWidgetFile(c, "sensai-widget.iife.js", "application/javascript");

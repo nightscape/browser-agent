@@ -14,6 +14,7 @@ export interface GitHubArtifactRepositoryConfig {
   branch: string;
   root: string;
   apiUrl?: string;
+  proxyUrl?: string;
   maxUploadSize?: number;
 }
 
@@ -94,6 +95,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
 
   private readonly apiUrl: string;
   private readonly graphQlUrl: string;
+  private readonly proxyUrl?: string;
   private readonly root: string;
   private readonly maxUploadSize: number;
 
@@ -110,6 +112,7 @@ export class GitHubArtifactRepository implements ArtifactRepository {
     if (!this.root) throw new Error("GitHub artifact storage requires a permitted root path");
     this.apiUrl = (config.apiUrl ?? "https://api.github.com").replace(/\/$/, "");
     this.graphQlUrl = graphQlApiUrl(this.apiUrl);
+    this.proxyUrl = config.proxyUrl?.replace(/\/$/, "");
     this.maxUploadSize = config.maxUploadSize ?? DEFAULT_MAX_UPLOAD_SIZE;
     this.id = `github:${config.owner}/${config.repository}:${config.branch}:${this.root}`;
     this.capabilities = {
@@ -280,7 +283,12 @@ export class GitHubArtifactRepository implements ArtifactRepository {
   }
 
   private async github<T>(path: string, init: RequestInit = {}, apiUrl = this.apiUrl): Promise<T> {
-    const response = await this.request(`${apiUrl}${path}`, {
+    const targetUrl = this.proxyUrl
+      ? apiUrl === this.graphQlUrl
+        ? `${this.proxyUrl}/graphql`
+        : `${this.proxyUrl}/rest${path}`
+      : `${apiUrl}${path}`;
+    const response = await this.request(targetUrl, {
       ...init,
       headers: {
         Accept: "application/vnd.github+json",
