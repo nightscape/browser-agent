@@ -49,8 +49,14 @@ export interface AgentInfo {
   description: string;
 }
 
+export interface AgentActivationAction {
+  tool: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface AgentDefinition extends AgentInfo {
   tools: string[];
+  onActivate: AgentActivationAction[];
   systemPrompt: string;
 }
 
