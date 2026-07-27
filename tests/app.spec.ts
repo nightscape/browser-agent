@@ -37,6 +37,12 @@ test.describe("SensAI App (normal page)", () => {
     await expect(page.getByText("Hi Natali! I'm your Data Product Lifecycle Assistant.")).toBeVisible();
   });
 
+  test("opens the data product intake form", async ({ page }) => {
+    await page.getByRole("button", { name: "Forms" }).click();
+    await expect(page.getByRole("heading", { name: "Data Product Intake" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save draft" })).toBeVisible();
+  });
+
   test("composer is visible and editable", async ({ page }) => {
     const composer = page.getByRole("textbox", { name: "Ask a question or describe what you need..." });
     await expect(composer).toBeVisible();

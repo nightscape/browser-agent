@@ -155,7 +155,9 @@ function AppInner({
   sendRef,
   delegateRef,
   forms,
+  openForm,
   onOpenForm,
+  onCloseForm,
 }: {
   settings: Settings;
   agents: AgentDefinition[];
@@ -171,7 +173,9 @@ function AppInner({
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
   delegateRef: React.MutableRefObject<((agentName: string, prompt: string) => Promise<void>) | null>;
   forms: FormDefinition[];
+  openForm: FormDefinition | null;
   onOpenForm: (form: FormDefinition) => void;
+  onCloseForm: () => void;
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -258,6 +262,7 @@ function AppInner({
           </div>
         </div>
       )}
+      {openForm && <FormEditorDialog definition={openForm} onClose={onCloseForm} />}
       </ArtifactProvider>
     </AssistantRuntimeProvider>
   );
@@ -473,7 +478,9 @@ function AppRoot() {
           sendRef={sendRef}
           delegateRef={delegateRef}
           forms={forms}
+          openForm={openForm}
           onOpenForm={setOpenForm}
+          onCloseForm={() => setOpenForm(null)}
         />
       </div>
 
@@ -496,8 +503,6 @@ function AppRoot() {
           onClose={() => setShowSkillEditor(false)}
         />
       )}
-
-      {openForm && <FormEditorDialog definition={openForm} onClose={() => setOpenForm(null)} />}
 
       {showExportImport && (
         <ExportImportDialog
