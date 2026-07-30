@@ -4,6 +4,7 @@ dist-widget
 .git
 .jj
 .env
+.npmrc
 .claude
 .playwright-mcp
 *.db

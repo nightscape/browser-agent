@@ -1,16 +1,22 @@
-FROM node:22-slim AS build
+FROM remote-docker.artifactory.dbgcloud.io/library/node:22-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm_config_registry=https://registry.npmjs.org/ \
+    npm_config_proxy=http://webproxy.deutsche-boerse.de:8080/ \
+    npm_config_https_proxy=http://webproxy.deutsche-boerse.de:8080/ \
+    npm ci
 COPY . .
 RUN npm run build
 
-FROM node:22-slim
+FROM remote-docker.artifactory.dbgcloud.io/library/node:22-slim
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm_config_registry=https://registry.npmjs.org/ \
+    npm_config_proxy=http://webproxy.deutsche-boerse.de:8080/ \
+    npm_config_https_proxy=http://webproxy.deutsche-boerse.de:8080/ \
+    npm ci --omit=dev
 COPY shared/ shared/
 COPY proxy/ proxy/
 
