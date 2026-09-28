@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { CircleHelp, MessageSquare, Plus, Settings, Trash2 } from "lucide-react";
 import {
   ThreadListPrimitive,
   ThreadListItemPrimitive,
+  useAui,
 } from "@assistant-ui/react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
@@ -11,21 +12,26 @@ interface Props {
   skills: SkillDefinition[];
   onSkillClick: (skillName: string) => void;
   onNewSkill: () => void;
+  onConversationSelected?: (threadId: string | null) => void;
+  onOpenSettings?: () => void;
   variant?: "standalone" | "widget";
   showSkills?: boolean;
 }
 
-const ThreadListItem = ({ variant }: { variant: "standalone" | "widget" }) => (
-  <ThreadListItemPrimitive.Root className={`group flex items-center gap-2 rounded-xl px-2 py-2 text-sm transition ${variant === "standalone" ? "border border-transparent text-[#DCDCDC] hover:bg-[#100b2b]/60 data-[active]:border-[#00CE7D]/45 data-[active]:bg-[#00454D]/45 data-[active]:text-[#00CE7D]" : "text-neutral-300 hover:bg-neutral-800 data-[active]:bg-neutral-800 data-[active]:text-white"}`}>
+function ThreadListItem({ variant, onConversationSelected }: { variant: "standalone" | "widget"; onConversationSelected?: (threadId: string | null) => void }) {
+  const aui = useAui();
+  const threadId = aui.threadListItem.source ? aui.threadListItem().getState()?.remoteId ?? null : null;
+
+  return <ThreadListItemPrimitive.Root className={`group flex items-center gap-2 rounded-xl px-2 py-2 text-sm transition ${variant === "standalone" ? "border border-transparent text-[#DCDCDC] hover:bg-[#100b2b]/60 data-[active]:border-[#00CE7D]/45 data-[active]:bg-[#00454D]/45 data-[active]:text-[#00CE7D]" : "text-neutral-300 hover:bg-neutral-800 data-[active]:bg-neutral-800 data-[active]:text-white"}`}>
     {variant === "standalone" && <MessageSquare className="h-3.5 w-3.5 shrink-0 text-[#00CE7D]" />}
-    <ThreadListItemPrimitive.Trigger className={`flex-1 truncate text-left ${variant === "standalone" ? "text-xs font-normal" : ""}`}>
+    <ThreadListItemPrimitive.Trigger onClick={() => onConversationSelected?.(threadId)} className={`flex-1 truncate text-left ${variant === "standalone" ? "text-xs font-normal" : ""}`}>
       <ThreadListItemPrimitive.Title fallback="New conversation" />
     </ThreadListItemPrimitive.Trigger>
     <ThreadListItemPrimitive.Delete aria-label="Delete conversation" className={`hidden shrink-0 rounded p-1 group-hover:block ${variant === "standalone" ? "text-[#DCDCDC]/55 hover:bg-[#FFAAA1]/15 hover:text-[#FFAAA1]" : "text-neutral-500 hover:bg-neutral-700 hover:text-neutral-300"}`}>
-      {variant === "standalone" ? <Trash2 className="h-3.5 w-3.5" /> : <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" /></svg>}
+      {variant === "standalone" ? <Trash2 className="h-3.5 w-3.5" /> : <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 0 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" /></svg>}
     </ThreadListItemPrimitive.Delete>
-  </ThreadListItemPrimitive.Root>
-);
+  </ThreadListItemPrimitive.Root>;
+}
 
 function groupByCategory(skills: SkillDefinition[]): Map<string, SkillDefinition[]> {
   const groups = new Map<string, SkillDefinition[]>();
@@ -68,7 +74,7 @@ function SkillButton({ skill, onClick }: { skill: SkillDefinition; onClick: () =
   );
 }
 
-export function ThreadList({ skills, onSkillClick, onNewSkill, variant = "widget", showSkills = true }: Props) {
+export function ThreadList({ skills, onSkillClick, onNewSkill, onConversationSelected, onOpenSettings, variant = "widget", showSkills = true }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const toggleCategory = (category: string) => {
@@ -96,7 +102,7 @@ export function ThreadList({ skills, onSkillClick, onNewSkill, variant = "widget
       </div>
       <div className={`flex-1 overflow-y-auto ${variant === "standalone" ? "space-y-1.5 pr-1" : "p-2"}`}>
         <ThreadListPrimitive.Items
-          components={{ ThreadListItem: () => <ThreadListItem variant={variant} /> }}
+          components={{ ThreadListItem: () => <ThreadListItem variant={variant} onConversationSelected={onConversationSelected} /> }}
         />
 
         {showSkills && skills.length > 0 && (
@@ -141,6 +147,18 @@ export function ThreadList({ skills, onSkillClick, onNewSkill, variant = "widget
           </div>
         )}
       </div>
+      {variant === "standalone" && (
+        <div className="mt-3 border-t border-[#2d236b]/55 pt-3">
+          <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs text-[#DCDCDC]/75 transition hover:bg-[#00454D]/45 hover:text-[#00CE7D]" title="Help">
+            <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Help</span>
+          </button>
+          {onOpenSettings && <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs text-[#DCDCDC]/75 transition hover:bg-[#00454D]/45 hover:text-[#00CE7D]" onClick={onOpenSettings} title="Settings">
+            <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Settings</span>
+          </button>}
+        </div>
+      )}
     </ThreadListPrimitive.Root>
   );
 }

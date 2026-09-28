@@ -22,6 +22,12 @@ interface ThreadProps {
   onActivateSkill: (skillName: string) => void;
   onOpenForm: (form: FormDefinition) => void;
   onDelegate: (agentName: string, prompt: string) => Promise<void>;
+  onNewConversation?: () => void;
+  onStartBusinessCase?: (threadId: string | null, intent: string, businessCaseId: string) => void;
+  onStartConversation?: (threadId: string | null) => void;
+  hasBusinessCase?: boolean;
+  isNewConversation?: boolean;
+  onOpenBusinessCase?: () => void;
   variant?: "standalone" | "widget";
 }
 
@@ -112,17 +118,37 @@ const AssistantMessage = ({ variant }: { variant: "standalone" | "widget" }) => 
   </MessagePrimitive.Root>
 );
 
-function StandaloneWelcome() {
+function StandaloneWelcome({ onStartBusinessCase, onStartConversation, onVisibleChange }: { onStartBusinessCase?: (threadId: string | null, intent: string, businessCaseId: string) => void; onStartConversation?: (threadId: string | null) => void; onVisibleChange: (visible: boolean) => void }) {
+  const aui = useAui();
   const composerRuntime = useComposerRuntime();
   const suggestions = [
-    { label: "Create data product", prompt: "Create a new data product for Marketing Analytics" },
-    { label: "Create data product (POC available)", prompt: "Create a new data product using an available POC" },
-    { label: "Report issue", prompt: "Report an issue: Data quality review test failed" },
-    { label: "Enhance existing data product", prompt: "Enhance an existing data product with additional attributes" },
-    { label: "Request data product retirement", prompt: "Request retirement of a data product" },
+    { label: "Create New Data Product (IT-driven Data Product)", prompt: "Create a new IT-driven data product", businessCaseIntent: "Create New Data Product (IT-driven Data Product)" },
+    { label: "Create New Data Product with POC (Hybrid Data Product)", prompt: "Create a new hybrid data product with a proof of concept", businessCaseIntent: "Create New Data Product with POC (Hybrid Data Product)" },
+    { label: "Register Existing Data Product (Self-Service Data Product)", prompt: "Register an existing self-service data product" },
+    { label: "Enhance Existing Data Product", prompt: "Enhance an existing data product with additional attributes" },
+    { label: "Report Issue", prompt: "Report an issue: Data quality review test failed" },
+    { label: "Request Retirement", prompt: "Request retirement of a data product" },
   ];
 
-  const sendSuggestion = (prompt: string) => {
+  useEffect(() => {
+    onVisibleChange(true);
+    return () => onVisibleChange(false);
+  }, [onVisibleChange]);
+
+  const sendSuggestion = ({ prompt, businessCaseIntent }: (typeof suggestions)[number]) => {
+    if (businessCaseIntent) {
+      const businessCaseId = `business-case-${crypto.randomUUID()}`;
+      onStartBusinessCase?.(null, businessCaseIntent, businessCaseId);
+      void aui.threadListItem().initialize().then((initializedThread) => {
+        const threadId = initializedThread.remoteId;
+        if (threadId) onStartBusinessCase?.(threadId, businessCaseIntent, businessCaseId);
+      });
+    } else {
+      onStartConversation?.(null);
+      void aui.threadListItem().initialize().then((initializedThread) => {
+        onStartConversation?.(initializedThread.remoteId ?? null);
+      });
+    }
     composerRuntime.setText(prompt);
     composerRuntime.send();
   };
@@ -132,8 +158,8 @@ function StandaloneWelcome() {
       <div className="dpl-welcome-bubble">
         <p>I can help you create, manage, scale, and troubleshoot your data products. To get started, please <strong>select one of the intents below</strong> or type your request directly in the chat!</p>
         <div className="dpl-intent-suggestions">
-          {suggestions.map(({ label, prompt }) => (
-            <button key={label} type="button" onClick={() => sendSuggestion(prompt)}>{label}</button>
+          {suggestions.map((suggestion) => (
+            <button key={suggestion.label} type="button" onClick={() => sendSuggestion(suggestion)}>{suggestion.label}</button>
           ))}
         </div>
       </div>
@@ -453,32 +479,32 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
   );
 }
 
-export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onDelegate, variant = "widget" }: ThreadProps) {
+export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onDelegate, onNewConversation, onStartBusinessCase, onStartConversation, hasBusinessCase = false, isNewConversation = false, onOpenBusinessCase, variant = "widget" }: ThreadProps) {
   const aui = useAui();
   const [showDelegate, setShowDelegate] = useState(false);
   const [agentName, setAgentName] = useState(agents[0]?.name ?? "");
   const [delegatePrompt, setDelegatePrompt] = useState("");
+  const [isWelcomeVisible, setIsWelcomeVisible] = useState(false);
 
   return (
     <ThreadPrimitive.Root className={`flex h-full min-h-0 flex-col ${variant === "standalone" ? "dpl-panel overflow-hidden" : ""}`}>
       {variant === "standalone" && (
         <div className="dpl-chat-heading">
           <div className="dpl-chat-heading-copy"><span aria-hidden="true">👋</span><p>Hi Natali! I&apos;m your Data Product Lifecycle Assistant.</p></div>
-          <button type="button" className="dpl-new-chat-button" onClick={() => aui.threads().switchToNewThread()}>
-            <Plus className="h-3.5 w-3.5" /> New Chat
-          </button>
-          {agents.length > 0 && (
-            <button type="button" className="dpl-new-chat-button" onClick={() => setShowDelegate(true)}>
-              <Split className="h-3.5 w-3.5" /> Delegate
+          <div className="dpl-chat-heading-actions">
+            {!isWelcomeVisible && !isNewConversation && hasBusinessCase && <button type="button" className="dpl-business-case-button" onClick={onOpenBusinessCase}>Business Case</button>}
+            <button type="button" className="dpl-new-chat-button" onClick={() => { aui.threads().switchToNewThread(); onNewConversation?.(); }}>
+              <Plus className="h-3.5 w-3.5" /> New Chat
             </button>
-          )}
-          {forms.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => onOpenForm(forms[0]!)}><ClipboardList className="h-3.5 w-3.5" /> Forms</button>}
+            {agents.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => setShowDelegate(true)}><Split className="h-3.5 w-3.5" /> Delegate</button>}
+            {forms.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => onOpenForm(forms[0]!)}><ClipboardList className="h-3.5 w-3.5" /> Forms</button>}
+          </div>
         </div>
       )}
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <div className={`mx-auto max-w-3xl px-4 py-8 ${variant === "standalone" ? "min-h-full" : ""}`}>
           <ThreadPrimitive.Empty>
-            {variant === "standalone" ? <StandaloneWelcome /> : (
+            {variant === "standalone" ? <StandaloneWelcome onStartBusinessCase={onStartBusinessCase} onStartConversation={onStartConversation} onVisibleChange={setIsWelcomeVisible} /> : (
               <div className="flex h-full items-center justify-center pt-24">
                 <div className="text-center">
                   <h1 className="mb-2 text-2xl font-semibold text-neutral-200">SensAI</h1>

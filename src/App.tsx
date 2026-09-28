@@ -13,14 +13,13 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "./components/Thread";
 import { ThreadList } from "./components/ThreadList";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { ExportImportDialog } from "./components/ExportImportDialog";
 import { SkillVariableDialog } from "./components/SkillVariableDialog";
 import { SkillEditorDialog } from "./components/SkillEditorDialog";
 import { WidgetHeader } from "./components/WidgetHeader";
 import { PageContextBar } from "./components/PageContextBar";
 import { WidgetThreadDrawer } from "./components/WidgetThreadDrawer";
-import { LifecycleDashboard, RequestedProcesses } from "./components/LifecycleDashboard";
-import { Bell, Download, HelpCircle, Settings as SettingsIcon } from "lucide-react";
+import { LifecycleDashboard } from "./components/LifecycleDashboard";
+import { Bell } from "lucide-react";
 import {
   loadSettings,
   saveSettings,
@@ -44,6 +43,26 @@ import type { FormDefinition } from "../shared/forms";
 import { FormEditorDialog } from "./components/FormEditorDialog";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
+
+const businessCaseIntentsStorageKey = "dpl-business-case-intents";
+const businessCaseIdsStorageKey = "dpl-business-case-ids";
+const pendingConversationId = "__dpl-pending-conversation__";
+
+function loadBusinessCaseIntents(): Record<string, string> {
+  try {
+    return JSON.parse(window.localStorage.getItem(businessCaseIntentsStorageKey) ?? "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function loadBusinessCaseIds(): Record<string, string> {
+  try {
+    return JSON.parse(window.localStorage.getItem(businessCaseIdsStorageKey) ?? "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
 
 function ChatRuntime({ settings }: { settings: Settings }) {
   return useChatRuntime({
@@ -151,7 +170,6 @@ function AppInner({
   onActivateSkill,
   onNewSkill,
   onOpenSettings,
-  onOpenExportImport,
   sendRef,
   delegateRef,
   forms,
@@ -169,7 +187,6 @@ function AppInner({
   onActivateSkill: (skillName: string) => void;
   onNewSkill: () => void;
   onOpenSettings: () => void;
-  onOpenExportImport: () => void;
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
   delegateRef: React.MutableRefObject<((agentName: string, prompt: string) => Promise<void>) | null>;
   forms: FormDefinition[];
@@ -179,13 +196,32 @@ function AppInner({
 }) {
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedRequestName, setSelectedRequestName] = useState("C7");
+  const [selectedRequestName, setSelectedRequestName] = useState<string | null>(null);
+  const [rightPanelMode, setRightPanelMode] = useState<"overview" | "record" | "businessCase">("overview");
+  const [businessCaseIntents, setBusinessCaseIntents] = useState<Record<string, string>>(loadBusinessCaseIntents);
+  const [businessCaseIds, setBusinessCaseIds] = useState<Record<string, string>>(loadBusinessCaseIds);
+  const [activeBusinessCaseId, setActiveBusinessCaseId] = useState<string | null>(null);
+  const [isBusinessCaseConnectionPending, setIsBusinessCaseConnectionPending] = useState(false);
+  const [isNewConversation, setIsNewConversation] = useState(false);
+  const businessCaseIntentsRef = useRef(businessCaseIntents);
+  const businessCaseIdsRef = useRef(businessCaseIds);
+  const selectedConversationIdRef = useRef<string | null>(null);
   const sidebarSkills = useMemo(
     () => skills.filter((s) => !s.urlPatterns || s.urlPatterns.length === 0),
     [skills],
   );
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+
+  useEffect(() => {
+    businessCaseIntentsRef.current = businessCaseIntents;
+    window.localStorage.setItem(businessCaseIntentsStorageKey, JSON.stringify(businessCaseIntents));
+  }, [businessCaseIntents]);
+
+  useEffect(() => {
+    businessCaseIdsRef.current = businessCaseIds;
+    window.localStorage.setItem(businessCaseIdsStorageKey, JSON.stringify(businessCaseIds));
+  }, [businessCaseIds]);
 
   const adapter = useMemo(
     () =>
@@ -244,21 +280,23 @@ function AppInner({
             </div>
             <div className="dpl-header-actions">
               <button aria-label="Notifications" className="dpl-icon-button" title="Notifications"><Bell size={17} /></button>
-              <button aria-label="Export or import settings" className="dpl-icon-button" onClick={onOpenExportImport} title="Export / Import"><Download size={17} /></button>
-              <button aria-label="Help" className="dpl-icon-button" title="Help"><HelpCircle size={17} /></button>
-              <button aria-label="Open settings" className="dpl-icon-button" onClick={onOpenSettings} title="Settings"><SettingsIcon size={17} /></button>
               <div className="dpl-user"><span className="dpl-avatar">NK</span><span className="dpl-user-name">Natali Karlova-Bourbonus</span></div>
             </div>
           </header>
           <div className="dpl-workspace">
             <div className="dpl-chat-area">
               <aside className="dpl-sidebar">
-                <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} variant="standalone" showSkills={false} />
+                <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} onConversationSelected={(threadId) => { selectedConversationIdRef.current = threadId; const hasBusinessCase = Boolean(threadId && businessCaseIntentsRef.current[threadId]); const businessCaseId = threadId ? businessCaseIdsRef.current[threadId] ?? threadId : null; setActiveBusinessCaseId(hasBusinessCase ? businessCaseId : null); setIsNewConversation(false); setIsBusinessCaseConnectionPending(false); setRightPanelMode(hasBusinessCase ? "businessCase" : "overview"); }} onOpenSettings={onOpenSettings} variant="standalone" showSkills={false} />
               </aside>
-              <main className="min-h-0"><Thread skills={skills} forms={forms} agents={agents} onActivateSkill={onActivateSkill} onOpenForm={onOpenForm} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} variant="standalone" /></main>
+              <main className="min-h-0"><Thread skills={skills} forms={forms} agents={agents} onActivateSkill={onActivateSkill} onOpenForm={onOpenForm} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} onNewConversation={() => { selectedConversationIdRef.current = pendingConversationId; setActiveBusinessCaseId(null); setIsBusinessCaseConnectionPending(false); setIsNewConversation(true); setRightPanelMode("overview"); }} onStartBusinessCase={(threadId, intent, businessCaseId) => { if (threadId) { const nextIntents = { ...businessCaseIntentsRef.current, [threadId]: intent }; const nextIds = { ...businessCaseIdsRef.current, [threadId]: businessCaseId }; businessCaseIntentsRef.current = nextIntents; businessCaseIdsRef.current = nextIds; setBusinessCaseIntents(nextIntents); setBusinessCaseIds(nextIds); selectedConversationIdRef.current = threadId; setIsBusinessCaseConnectionPending(false); } else { selectedConversationIdRef.current = pendingConversationId; setIsBusinessCaseConnectionPending(true); } setActiveBusinessCaseId(businessCaseId); setIsNewConversation(false); setRightPanelMode("businessCase"); }} onStartConversation={(threadId) => { if (threadId) { selectedConversationIdRef.current = threadId; setIsBusinessCaseConnectionPending(false); } else { selectedConversationIdRef.current = pendingConversationId; setIsBusinessCaseConnectionPending(true); } setActiveBusinessCaseId(null); setIsNewConversation(false); setRightPanelMode("overview"); }} hasBusinessCase={Boolean(activeBusinessCaseId)} isNewConversation={isNewConversation} onOpenBusinessCase={() => setRightPanelMode("businessCase")} variant="standalone" /></main>
             </div>
-            <LifecycleDashboard selectedRequestName={selectedRequestName} />
-            <RequestedProcesses selectedRequestName={selectedRequestName} onSelectRequest={setSelectedRequestName} />
+            <LifecycleDashboard
+              selectedRequestName={selectedRequestName}
+              mode={rightPanelMode}
+              businessCaseId={activeBusinessCaseId}
+              onSelectRequest={(name) => { setSelectedRequestName(name); setRightPanelMode("record"); }}
+              onShowRecords={() => setRightPanelMode("overview")}
+            />
           </div>
         </div>
       )}
@@ -282,7 +320,6 @@ function AppRoot() {
   const [startupError, setStartupError] = useState<string | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
-  const [showExportImport, setShowExportImport] = useState(false);
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [predefinedMcpServers, setPredefinedMcpServers] = useState<
     Record<string, PredefinedMcpServer>
@@ -473,7 +510,6 @@ function AppRoot() {
           urlContext={urlContext}
           onActivateSkill={handleActivateSkill}
           onOpenSettings={() => setShowSettings(true)}
-          onOpenExportImport={() => setShowExportImport(true)}
           onNewSkill={() => setShowSkillEditor(true)}
           sendRef={sendRef}
           delegateRef={delegateRef}
@@ -501,17 +537,6 @@ function AppRoot() {
           agents={agents}
           onSave={handleSkillEditorSave}
           onClose={() => setShowSkillEditor(false)}
-        />
-      )}
-
-      {showExportImport && (
-        <ExportImportDialog
-          settings={settings}
-          onImportComplete={async (updated) => {
-            await saveSettings(updated);
-            setSettings(updated);
-          }}
-          onClose={() => setShowExportImport(false)}
         />
       )}
 
