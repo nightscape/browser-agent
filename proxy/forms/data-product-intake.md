@@ -11,6 +11,8 @@ fields:
       - Enhancement
       - Report issue
       - Request retirement
+      - Review data product request
+      - Complete business requirements and acceptance criteria
     required: true
     help: Choose the outcome the requester needs.
     agentInstruction: Confirm that the request type matches the user's intended outcome before proceeding.

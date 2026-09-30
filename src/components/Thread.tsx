@@ -8,7 +8,7 @@ import {
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
-import { ClipboardList, FileText, Paperclip, Plus, Send, Split, X } from "lucide-react";
+import { FileText, Info, Paperclip, Plus, Send, Split, X } from "lucide-react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
 import type { AgentDefinition } from "../../shared/types";
@@ -122,12 +122,21 @@ function StandaloneWelcome({ onStartBusinessCase, onStartConversation, onVisible
   const aui = useAui();
   const composerRuntime = useComposerRuntime();
   const suggestions = [
-    { label: "Create New Data Product (IT-driven Data Product)", prompt: "Create a new IT-driven data product", businessCaseIntent: "Create New Data Product (IT-driven Data Product)" },
-    { label: "Create New Data Product with POC (Hybrid Data Product)", prompt: "Create a new hybrid data product with a proof of concept", businessCaseIntent: "Create New Data Product with POC (Hybrid Data Product)" },
-    { label: "Register Existing Data Product (Self-Service Data Product)", prompt: "Register an existing self-service data product" },
+    { label: "Create Regular IT Data Product", description: "Data product delivered and operated by the StatistiX team from approved business requirements managed in Jira.", prompt: "Create a new IT-driven data product", businessCaseIntent: "Create New Data Product (IT-driven Data Product)" },
+    { label: "Create Hybrid Data Product", description: "Data product initially developed as a business proof of concept and formally transitioned to StatistiX for operational ownership, maintenance, and support.", prompt: "Create a new hybrid data product with a proof of concept", businessCaseIntent: "Create New Data Product with POC (Hybrid Data Product)" },
+    { label: "Register Self-Service Data Product", description: "Data product owned by the business for ad-hoc analysis, data exploration, and proof-of-concept work.", prompt: "Register an existing self-service data product" },
     { label: "Enhance Existing Data Product", prompt: "Enhance an existing data product with additional attributes" },
     { label: "Report Issue", prompt: "Report an issue: Data quality review test failed" },
     { label: "Request Retirement", prompt: "Request retirement of a data product" },
+    { label: "Review Data Product Request (Jira Ticket)", prompt: "Review a Data Product Request Jira ticket. Summarize its current status, identify missing information, and recommend the next lifecycle action." },
+    { label: "Complete Business Requirements & Acceptance Criteria (Jira Ticket)", prompt: "Help me populate the Business Requirements Jira ticket, including the Business Requirements Document and measurable acceptance criteria." },
+    { label: "Complete Technical Design (Jira Ticket)", prompt: "Help me populate the Technical Design Jira ticket, including technical requirements, dependencies, feasibility assessment, risks, cost estimates, and delivery planning." },
+  ];
+  const intentGroups = [
+    { role: "Requester", suggestions: suggestions.slice(0, 6) },
+    { role: "Domain Owner", suggestions: suggestions.slice(6, 7) },
+    { role: "Data Product Owner", suggestions: suggestions.slice(7, 8) },
+    { role: "Delivery Team Lead", suggestions: suggestions.slice(8) },
   ];
 
   useEffect(() => {
@@ -156,10 +165,17 @@ function StandaloneWelcome({ onStartBusinessCase, onStartConversation, onVisible
   return (
     <div className="dpl-welcome-message">
       <div className="dpl-welcome-bubble">
-        <p>I can help you create, manage, scale, and troubleshoot your data products. To get started, please <strong>select one of the intents below</strong> or type your request directly in the chat!</p>
-        <div className="dpl-intent-suggestions">
-          {suggestions.map((suggestion) => (
-            <button key={suggestion.label} type="button" onClick={() => sendSuggestion(suggestion)}>{suggestion.label}</button>
+        <p>I can help you create, manage, scale, and troubleshoot your data products. To get started, please <strong>select the intent that matches your role below</strong> or type your request directly in the chat!</p>
+        <div className="dpl-intent-groups">
+          {intentGroups.map((group) => (
+            <section className="dpl-intent-group" key={group.role} aria-label={`${group.role} intents`}>
+              <h2>{group.role}</h2>
+              <div className="dpl-intent-suggestions">
+                {group.suggestions.map((suggestion) => (
+                  <button key={suggestion.label} type="button" onClick={() => sendSuggestion(suggestion)}><span>{suggestion.label}</span>{suggestion.description && <span className="dpl-intent-info" aria-label={suggestion.description}><Info size={14} aria-hidden="true" /><span className="dpl-intent-tooltip" role="tooltip">{suggestion.description}</span></span>}</button>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </div>
@@ -492,12 +508,11 @@ export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onD
         <div className="dpl-chat-heading">
           <div className="dpl-chat-heading-copy"><span aria-hidden="true">👋</span><p>Hi Natali! I&apos;m your Data Product Lifecycle Assistant.</p></div>
           <div className="dpl-chat-heading-actions">
-            {!isWelcomeVisible && !isNewConversation && hasBusinessCase && <button type="button" className="dpl-business-case-button" onClick={onOpenBusinessCase}>Business Case</button>}
+            {!isWelcomeVisible && !isNewConversation && hasBusinessCase && <button type="button" className="dpl-business-case-button" onClick={onOpenBusinessCase}>One Pager</button>}
             <button type="button" className="dpl-new-chat-button" onClick={() => { aui.threads().switchToNewThread(); onNewConversation?.(); }}>
               <Plus className="h-3.5 w-3.5" /> New Chat
             </button>
             {agents.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => setShowDelegate(true)}><Split className="h-3.5 w-3.5" /> Delegate</button>}
-            {forms.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => onOpenForm(forms[0]!)}><ClipboardList className="h-3.5 w-3.5" /> Forms</button>}
           </div>
         </div>
       )}
