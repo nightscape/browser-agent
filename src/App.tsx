@@ -18,8 +18,8 @@ import { SkillEditorDialog } from "./components/SkillEditorDialog";
 import { WidgetHeader } from "./components/WidgetHeader";
 import { PageContextBar } from "./components/PageContextBar";
 import { WidgetThreadDrawer } from "./components/WidgetThreadDrawer";
-import { LifecycleDashboard } from "./components/LifecycleDashboard";
-import { Bell } from "lucide-react";
+import { DraftWorkspace, getRequestSummary, HelpWorkspace, LifecycleDashboard, PortalDashboard, RequestConversationsWorkspace, RequestWorkspace } from "./components/LifecycleDashboard";
+import { ArrowLeft, Bell } from "lucide-react";
 import {
   loadSettings,
   saveSettings,
@@ -41,6 +41,7 @@ import { useArtifacts } from "./artifact-context";
 import { useArtifactTools } from "./use-artifact-tools";
 import type { FormDefinition } from "../shared/forms";
 import { FormEditorDialog } from "./components/FormEditorDialog";
+import { putThread } from "./storage/threads";
 
 export type { AgentInfo, PredefinedMcpServer, EnvConfig };
 
@@ -126,6 +127,21 @@ function ThreadFromUrl() {
   return null;
 }
 
+function DraftOpenBridge({ onOpen }: { onOpen: (threadId: string) => void }) {
+  const aui = useAui();
+  useEffect(() => {
+    const openDraft = (event: Event) => {
+      const threadId = (event as CustomEvent<{ threadId: string }>).detail?.threadId;
+      if (!threadId) return;
+      aui.threads().switchToThread(threadId);
+      onOpen(threadId);
+    };
+    window.addEventListener("dpl-open-draft", openDraft);
+    return () => window.removeEventListener("dpl-open-draft", openDraft);
+  }, [aui, onOpen]);
+  return null;
+}
+
 function SkillMessageBridge({ sendRef }: { sendRef: React.MutableRefObject<((text: string) => void) | null> }) {
   const composer = useComposerRuntime();
   sendRef.current = useCallback(
@@ -157,6 +173,46 @@ function DelegationBridge({
     window.setTimeout(() => sendRef.current?.(prompt), 0);
   }, [aui, sendRef]);
   return null;
+}
+
+function RequestStartDialog({ mode, onClose, onCreated }: {
+  mode: "request" | "jira";
+  onClose: () => void;
+  onCreated: (threadId: string, intent: string, businessCaseId: string, isDraft: boolean) => void;
+}) {
+  const aui = useAui();
+  const composer = useComposerRuntime();
+  const [name, setName] = useState("");
+  const [jiraKey, setJiraKey] = useState("");
+  const canCreate = mode === "request" ? name.trim().length > 0 : jiraKey.trim().length > 0;
+
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canCreate) return;
+    const title = mode === "request" ? name.trim() : `Jira review: ${jiraKey.trim().toUpperCase()}`;
+    const resolvedIntent = mode === "request" ? "Intention pending" : "Review Data Product Request";
+    const businessCaseId = mode === "request" ? `business-case-${crypto.randomUUID()}` : `request-review-${crypto.randomUUID()}`;
+    const prompt = mode === "request"
+      ? `Start the intake for "${title}". First understand the request and recommend the most suitable intention from: Create Regular IT Data Product, Create Hybrid Data Product, Register Self-Service Data Product, Enhance Existing Data Product, Report Issue, or Request Retirement. Explain the recommendation briefly, then help complete the One Pager.`
+      : `Review Jira ticket ${jiraKey.trim().toUpperCase()}. Identify missing information and recommend the next lifecycle action.`;
+    const initializedThread = await aui.threadListItem().initialize();
+    const threadId = initializedThread.remoteId;
+    if (!threadId) return;
+    await putThread({ id: threadId, remoteId: threadId, title, status: "regular", createdAt: Date.now(), launch: { prompt, createdAt: Date.now() } });
+    window.dispatchEvent(new CustomEvent("dpl-conversation-created", { detail: threadId }));
+    onCreated(threadId, resolvedIntent, businessCaseId, mode === "request");
+    composer.setText(prompt);
+    composer.send();
+    onClose();
+  };
+
+  return <div className="dpl-request-dialog-backdrop" role="presentation">
+    <form className="dpl-request-dialog" onSubmit={(event) => void create(event)} aria-label={mode === "request" ? "Create new request" : "Review Jira ticket"}>
+      <div><h2>{mode === "request" ? "Create new request" : "Review Jira ticket"}</h2><p>{mode === "request" ? "Name the draft. The intake assistant will help determine the appropriate intention." : "Link a Jira ticket to an assessment workspace."}</p></div>
+      {mode === "request" ? <label>Request name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Improve customer reporting" /></label> : <label>Jira ticket key<input autoFocus value={jiraKey} onChange={(event) => setJiraKey(event.target.value)} placeholder="EXDPL-1041" /></label>}
+      <footer><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={!canCreate}>{mode === "request" ? "Create draft" : "Review ticket"}</button></footer>
+    </form>
+  </div>;
 }
 
 function AppInner({
@@ -197,12 +253,18 @@ function AppInner({
   const { isWidget } = useWidgetMode();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedRequestName, setSelectedRequestName] = useState<string | null>(null);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<"overview" | "record" | "businessCase">("overview");
+  const [activeWorkspace, setActiveWorkspace] = useState<"dashboard" | "chat" | "currentRequests" | "drafts" | "draftWorkspace" | "archive" | "help">("dashboard");
   const [businessCaseIntents, setBusinessCaseIntents] = useState<Record<string, string>>(loadBusinessCaseIntents);
   const [businessCaseIds, setBusinessCaseIds] = useState<Record<string, string>>(loadBusinessCaseIds);
   const [activeBusinessCaseId, setActiveBusinessCaseId] = useState<string | null>(null);
   const [isBusinessCaseConnectionPending, setIsBusinessCaseConnectionPending] = useState(false);
-  const [isNewConversation, setIsNewConversation] = useState(false);
+  const [isNewConversation, setIsNewConversation] = useState(true);
+  const [requestDialogMode, setRequestDialogMode] = useState<"request" | "jira" | null>(null);
+  const isRequestDashboardOpen = rightPanelMode === "record" && Boolean(selectedRequestName);
+  const showRightPanel = (activeWorkspace === "chat" && rightPanelMode === "businessCase") || isRequestDashboardOpen;
+  const businessCaseLabel = "Request Workspace";
   const businessCaseIntentsRef = useRef(businessCaseIntents);
   const businessCaseIdsRef = useRef(businessCaseIds);
   const selectedConversationIdRef = useRef<string | null>(null);
@@ -222,6 +284,23 @@ function AppInner({
     businessCaseIdsRef.current = businessCaseIds;
     window.localStorage.setItem(businessCaseIdsStorageKey, JSON.stringify(businessCaseIds));
   }, [businessCaseIds]);
+
+  useEffect(() => {
+    const openNewRequest = () => setRequestDialogMode("request");
+    const openJiraReview = () => setRequestDialogMode("jira");
+    const openDrafts = () => { setActiveWorkspace("drafts"); setSelectedRequestName(null); setRightPanelMode("overview"); };
+    const openDashboard = () => { setActiveWorkspace("dashboard"); setSelectedRequestName(null); setRightPanelMode("overview"); };
+    window.addEventListener("dpl-new-request", openNewRequest);
+    window.addEventListener("dpl-review-jira", openJiraReview);
+    window.addEventListener("dpl-open-drafts", openDrafts);
+    window.addEventListener("dpl-open-dashboard", openDashboard);
+    return () => {
+      window.removeEventListener("dpl-new-request", openNewRequest);
+      window.removeEventListener("dpl-review-jira", openJiraReview);
+      window.removeEventListener("dpl-open-drafts", openDrafts);
+      window.removeEventListener("dpl-open-dashboard", openDashboard);
+    };
+  }, []);
 
   const adapter = useMemo(
     () =>
@@ -246,6 +325,15 @@ function AppInner({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadFromUrl />
+      <DraftOpenBridge onOpen={(threadId) => {
+        selectedConversationIdRef.current = threadId;
+        setSelectedDraftId(threadId);
+        setActiveBusinessCaseId(null);
+        setIsNewConversation(false);
+        setIsBusinessCaseConnectionPending(false);
+        setRightPanelMode("overview");
+        setActiveWorkspace("draftWorkspace");
+      }} />
       <SystemPromptBridge defaultSystemPrompt={defaultSystemPrompt} agents={agents} settings={settings} urlContext={urlContext} />
       <McpToolsBridge settings={settings} predefinedMcpServers={predefinedMcpServers} />
       <BrowserToolsBridge />
@@ -253,6 +341,25 @@ function AppInner({
       <DelegationBridge delegateRef={delegateRef} sendRef={sendRef} />
       <ArtifactProvider settings={settings} envConfig={envConfig}>
       <ArtifactToolsBridge />
+      {!isWidget && requestDialogMode && <RequestStartDialog
+        mode={requestDialogMode}
+        onClose={() => setRequestDialogMode(null)}
+        onCreated={(threadId, intent, businessCaseId, isDraft) => {
+          const nextIntents = { ...businessCaseIntentsRef.current, [threadId]: intent };
+          const nextIds = { ...businessCaseIdsRef.current, [threadId]: businessCaseId };
+          businessCaseIntentsRef.current = nextIntents;
+          businessCaseIdsRef.current = nextIds;
+          setBusinessCaseIntents(nextIntents);
+          setBusinessCaseIds(nextIds);
+          selectedConversationIdRef.current = threadId;
+          setSelectedDraftId(isDraft ? threadId : null);
+          setActiveBusinessCaseId(isDraft ? null : businessCaseId);
+          setIsNewConversation(false);
+          setIsBusinessCaseConnectionPending(false);
+          setRightPanelMode(isDraft ? "overview" : "businessCase");
+          setActiveWorkspace(isDraft ? "draftWorkspace" : "chat");
+        }}
+      />}
       {isWidget ? (
         <div className="flex h-dvh flex-col">
           <WidgetHeader
@@ -276,27 +383,43 @@ function AppInner({
           <header className="dpl-header">
             <div className="dpl-brand">
               <span className="dpl-brand-icon"><img src="/logo.png" alt="Eurex logo" /></span>
-              <div><h1>Data Product Lifecycle Assistant</h1><p>AI-powered guidance for your data product journey</p></div>
+              <div><h1>Data Product Lifecycle Portal</h1><p>AI-powered guidance for your data product journey</p></div>
             </div>
             <div className="dpl-header-actions">
               <button aria-label="Notifications" className="dpl-icon-button" title="Notifications"><Bell size={17} /></button>
               <div className="dpl-user"><span className="dpl-avatar">NK</span><span className="dpl-user-name">Natali Karlova-Bourbonus</span></div>
             </div>
           </header>
-          <div className="dpl-workspace">
+          <div className={`dpl-workspace${isRequestDashboardOpen ? " dpl-workspace-no-dashboard dpl-workspace-request-shell" : showRightPanel ? "" : " dpl-workspace-no-dashboard"}`}>
             <div className="dpl-chat-area">
               <aside className="dpl-sidebar">
-                <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} onConversationSelected={(threadId) => { selectedConversationIdRef.current = threadId; const hasBusinessCase = Boolean(threadId && businessCaseIntentsRef.current[threadId]); const businessCaseId = threadId ? businessCaseIdsRef.current[threadId] ?? threadId : null; setActiveBusinessCaseId(hasBusinessCase ? businessCaseId : null); setIsNewConversation(false); setIsBusinessCaseConnectionPending(false); setRightPanelMode(hasBusinessCase ? "businessCase" : "overview"); }} onOpenSettings={onOpenSettings} variant="standalone" showSkills={false} />
+                <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} onConversationSelected={(threadId) => { selectedConversationIdRef.current = threadId; const hasBusinessCase = Boolean(threadId && businessCaseIntentsRef.current[threadId]); const businessCaseId = threadId ? businessCaseIdsRef.current[threadId] ?? threadId : null; setActiveBusinessCaseId(hasBusinessCase ? businessCaseId : null); setIsNewConversation(false); setIsBusinessCaseConnectionPending(false); setRightPanelMode(hasBusinessCase ? "businessCase" : "overview"); setActiveWorkspace("chat"); }} onConversationRemoved={(nextThreadId) => { const hasBusinessCase = Boolean(nextThreadId && businessCaseIntentsRef.current[nextThreadId]); const businessCaseId = nextThreadId ? businessCaseIdsRef.current[nextThreadId] ?? nextThreadId : null; selectedConversationIdRef.current = nextThreadId ?? pendingConversationId; setActiveBusinessCaseId(hasBusinessCase ? businessCaseId : null); setIsBusinessCaseConnectionPending(false); setIsNewConversation(nextThreadId === null); setRightPanelMode(hasBusinessCase ? "businessCase" : "overview"); setActiveWorkspace("chat"); }} onNewChat={() => { setActiveWorkspace("chat"); setSelectedRequestName(null); setActiveBusinessCaseId(null); setIsNewConversation(true); setRightPanelMode("overview"); }} onOpenCurrentRequests={() => { setActiveWorkspace("currentRequests"); setSelectedRequestName(null); setRightPanelMode("overview"); }} onOpenRequest={(name) => { setSelectedRequestName(name); setRightPanelMode("record"); setActiveWorkspace("chat"); }} onOpenArchive={() => { setActiveWorkspace("archive"); setSelectedRequestName(null); setRightPanelMode("overview"); }} onOpenHelp={() => { setActiveWorkspace("help"); setSelectedRequestName(null); setRightPanelMode("overview"); }} activeWorkspace={activeWorkspace} onOpenSettings={onOpenSettings} variant="standalone" showSkills={false} />
               </aside>
-              <main className="min-h-0"><Thread skills={skills} forms={forms} agents={agents} onActivateSkill={onActivateSkill} onOpenForm={onOpenForm} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} onNewConversation={() => { selectedConversationIdRef.current = pendingConversationId; setActiveBusinessCaseId(null); setIsBusinessCaseConnectionPending(false); setIsNewConversation(true); setRightPanelMode("overview"); }} onStartBusinessCase={(threadId, intent, businessCaseId) => { if (threadId) { const nextIntents = { ...businessCaseIntentsRef.current, [threadId]: intent }; const nextIds = { ...businessCaseIdsRef.current, [threadId]: businessCaseId }; businessCaseIntentsRef.current = nextIntents; businessCaseIdsRef.current = nextIds; setBusinessCaseIntents(nextIntents); setBusinessCaseIds(nextIds); selectedConversationIdRef.current = threadId; setIsBusinessCaseConnectionPending(false); } else { selectedConversationIdRef.current = pendingConversationId; setIsBusinessCaseConnectionPending(true); } setActiveBusinessCaseId(businessCaseId); setIsNewConversation(false); setRightPanelMode("businessCase"); }} onStartConversation={(threadId) => { if (threadId) { selectedConversationIdRef.current = threadId; setIsBusinessCaseConnectionPending(false); } else { selectedConversationIdRef.current = pendingConversationId; setIsBusinessCaseConnectionPending(true); } setActiveBusinessCaseId(null); setIsNewConversation(false); setRightPanelMode("overview"); }} hasBusinessCase={Boolean(activeBusinessCaseId)} isNewConversation={isNewConversation} onOpenBusinessCase={() => setRightPanelMode("businessCase")} variant="standalone" /></main>
+              <section className={`dpl-main-window${isRequestDashboardOpen ? " dpl-main-window-request" : ""}${activeWorkspace === "draftWorkspace" ? " dpl-main-window-draft" : ""}${activeWorkspace === "drafts" ? " dpl-main-window-drafts" : ""}${activeWorkspace === "currentRequests" || activeWorkspace === "archive" ? " dpl-main-window-requests" : ""}`}>
+              {isRequestDashboardOpen && selectedRequestName && <nav className="dpl-main-window-request-identity" aria-label="Request path"><button type="button" onClick={() => { setSelectedRequestName(null); setRightPanelMode("overview"); setActiveWorkspace("currentRequests"); }}><ArrowLeft size={13} />All requests</button><span aria-hidden="true">/</span><em title={getRequestSummary(selectedRequestName)?.title ?? selectedRequestName}>{getRequestSummary(selectedRequestName)?.title ?? selectedRequestName}</em></nav>}
+              <main className="relative min-h-0">
+                {activeWorkspace === "dashboard" && <PortalDashboard onOpenRequests={() => setActiveWorkspace("currentRequests")} />}
+                {activeWorkspace === "drafts" && <div className="dpl-drafts-overlay"><RequestWorkspace scope="drafts" selectedRequestName={null} onSelectRequest={() => setActiveWorkspace("chat")} /></div>}
+                {activeWorkspace === "draftWorkspace" && selectedDraftId && <div className="dpl-draft-workspace-overlay"><DraftWorkspace draftId={selectedDraftId} onBack={() => { setSelectedDraftId(null); setActiveWorkspace("drafts"); }} /></div>}
+                {isRequestDashboardOpen && selectedRequestName && <div className="dpl-request-conversations-overlay"><RequestConversationsWorkspace requestName={selectedRequestName} /></div>}
+                {activeWorkspace === "currentRequests" ? <RequestWorkspace scope="current" selectedRequestName={selectedRequestName} onSelectRequest={(name) => { setSelectedRequestName(name); setRightPanelMode("record"); }} /> : activeWorkspace === "archive" ? <RequestWorkspace scope="archive" selectedRequestName={selectedRequestName} onSelectRequest={(name) => { setSelectedRequestName(name); setRightPanelMode("record"); }} /> : activeWorkspace === "help" ? <HelpWorkspace /> : <Thread skills={skills} forms={forms} agents={agents} onActivateSkill={onActivateSkill} onOpenForm={onOpenForm} onDelegate={(agentName, prompt) => delegateRef.current?.(agentName, prompt) ?? Promise.resolve()} onNewConversation={() => { selectedConversationIdRef.current = pendingConversationId; setActiveBusinessCaseId(null); setIsBusinessCaseConnectionPending(false); setIsNewConversation(true); setRightPanelMode("overview"); setActiveWorkspace("chat"); }} onStartBusinessCase={(threadId, intent, businessCaseId) => { if (threadId) { const nextIntents = { ...businessCaseIntentsRef.current, [threadId]: intent }; const nextIds = { ...businessCaseIdsRef.current, [threadId]: businessCaseId }; businessCaseIntentsRef.current = nextIntents; businessCaseIdsRef.current = nextIds; setBusinessCaseIntents(nextIntents); setBusinessCaseIds(nextIds); selectedConversationIdRef.current = threadId; setIsBusinessCaseConnectionPending(false); } else { selectedConversationIdRef.current = pendingConversationId; setIsBusinessCaseConnectionPending(true); } setActiveBusinessCaseId(businessCaseId); setIsNewConversation(false); setRightPanelMode("businessCase"); setActiveWorkspace("chat"); }} onStartConversation={(threadId) => { if (threadId) { selectedConversationIdRef.current = threadId; setIsBusinessCaseConnectionPending(false); } else { selectedConversationIdRef.current = pendingConversationId; setIsBusinessCaseConnectionPending(true); } setActiveBusinessCaseId(null); setIsNewConversation(false); setRightPanelMode("overview"); setActiveWorkspace("chat"); }} hasBusinessCase={Boolean(activeBusinessCaseId)} isBusinessCaseOpen={showRightPanel} businessCaseLabel={businessCaseLabel} isNewConversation={isNewConversation} onOpenBusinessCase={() => setRightPanelMode(showRightPanel ? "overview" : "businessCase")} variant="standalone" />}
+              </main>
+              {isRequestDashboardOpen && <LifecycleDashboard
+                selectedRequestName={selectedRequestName}
+                mode={rightPanelMode}
+                businessCaseId={activeBusinessCaseId}
+                overlay={false}
+                onShowRecords={() => { setSelectedRequestName(null); setRightPanelMode("overview"); setActiveWorkspace("currentRequests"); }}
+              />}
+              </section>
             </div>
-            <LifecycleDashboard
+            {!isRequestDashboardOpen && showRightPanel && <LifecycleDashboard
               selectedRequestName={selectedRequestName}
               mode={rightPanelMode}
               businessCaseId={activeBusinessCaseId}
-              onSelectRequest={(name) => { setSelectedRequestName(name); setRightPanelMode("record"); }}
-              onShowRecords={() => setRightPanelMode("overview")}
-            />
+              overlay={false}
+              onShowRecords={() => { setSelectedRequestName(null); setRightPanelMode("overview"); setActiveWorkspace("currentRequests"); }}
+            />}
           </div>
         </div>
       )}

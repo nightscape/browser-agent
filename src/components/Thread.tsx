@@ -8,12 +8,13 @@ import {
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
-import { FileText, Info, Paperclip, Plus, Send, Split, X } from "lucide-react";
+import { ArrowUpRight, BadgePlus, ClipboardCheck, Eye, EyeOff, FileText, Info, Paperclip, Send, Split, X } from "lucide-react";
 import type { SkillDefinition } from "../../shared/skills";
 import { displayName } from "../../shared/skills";
 import type { AgentDefinition } from "../../shared/types";
 import type { FormDefinition } from "../../shared/forms";
 import { useArtifacts } from "../artifact-context";
+import { getThread, putThread } from "../storage/threads";
 
 interface ThreadProps {
   skills: SkillDefinition[];
@@ -26,6 +27,8 @@ interface ThreadProps {
   onStartBusinessCase?: (threadId: string | null, intent: string, businessCaseId: string) => void;
   onStartConversation?: (threadId: string | null) => void;
   hasBusinessCase?: boolean;
+  isBusinessCaseOpen?: boolean;
+  businessCaseLabel?: string;
   isNewConversation?: boolean;
   onOpenBusinessCase?: () => void;
   variant?: "standalone" | "widget";
@@ -37,6 +40,14 @@ const UserMessage = ({ variant }: { variant: "standalone" | "widget" }) => (
       <MessagePrimitive.Content />
     </div>
   </MessagePrimitive.Root>
+);
+
+const UserMessageFallback = ({ prompt }: { prompt: string }) => (
+  <div className="mb-4 flex justify-end">
+    <div className="max-w-[85%] rounded-2xl border border-[#00CE7D]/30 bg-[#00454D]/65 px-3 py-2.5 text-xs font-normal leading-relaxed text-[#F3F3F3] shadow-md">
+      {prompt}
+    </div>
+  </div>
 );
 
 const StreamdownText = () => (
@@ -118,65 +129,20 @@ const AssistantMessage = ({ variant }: { variant: "standalone" | "widget" }) => 
   </MessagePrimitive.Root>
 );
 
-function StandaloneWelcome({ onStartBusinessCase, onStartConversation, onVisibleChange }: { onStartBusinessCase?: (threadId: string | null, intent: string, businessCaseId: string) => void; onStartConversation?: (threadId: string | null) => void; onVisibleChange: (visible: boolean) => void }) {
-  const aui = useAui();
-  const composerRuntime = useComposerRuntime();
-  const suggestions = [
-    { label: "Create Regular IT Data Product", description: "Data product delivered and operated by the StatistiX team from approved business requirements managed in Jira.", prompt: "Create a new IT-driven data product", businessCaseIntent: "Create New Data Product (IT-driven Data Product)" },
-    { label: "Create Hybrid Data Product", description: "Data product initially developed as a business proof of concept and formally transitioned to StatistiX for operational ownership, maintenance, and support.", prompt: "Create a new hybrid data product with a proof of concept", businessCaseIntent: "Create New Data Product with POC (Hybrid Data Product)" },
-    { label: "Register Self-Service Data Product", description: "Data product owned by the business for ad-hoc analysis, data exploration, and proof-of-concept work.", prompt: "Register an existing self-service data product" },
-    { label: "Enhance Existing Data Product", prompt: "Enhance an existing data product with additional attributes" },
-    { label: "Report Issue", prompt: "Report an issue: Data quality review test failed" },
-    { label: "Request Retirement", prompt: "Request retirement of a data product" },
-    { label: "Review Data Product Request (Jira Ticket)", prompt: "Review a Data Product Request Jira ticket. Summarize its current status, identify missing information, and recommend the next lifecycle action." },
-    { label: "Complete Business Requirements & Acceptance Criteria (Jira Ticket)", prompt: "Help me populate the Business Requirements Jira ticket, including the Business Requirements Document and measurable acceptance criteria." },
-    { label: "Complete Technical Design (Jira Ticket)", prompt: "Help me populate the Technical Design Jira ticket, including technical requirements, dependencies, feasibility assessment, risks, cost estimates, and delivery planning." },
-  ];
-  const intentGroups = [
-    { role: "Requester", suggestions: suggestions.slice(0, 6) },
-    { role: "Domain Owner", suggestions: suggestions.slice(6, 7) },
-    { role: "Data Product Owner", suggestions: suggestions.slice(7, 8) },
-    { role: "Delivery Team Lead", suggestions: suggestions.slice(8) },
-  ];
-
+function StandaloneWelcome({ onVisibleChange }: { onVisibleChange: (visible: boolean) => void }) {
   useEffect(() => {
     onVisibleChange(true);
     return () => onVisibleChange(false);
   }, [onVisibleChange]);
 
-  const sendSuggestion = ({ prompt, businessCaseIntent }: (typeof suggestions)[number]) => {
-    if (businessCaseIntent) {
-      const businessCaseId = `business-case-${crypto.randomUUID()}`;
-      onStartBusinessCase?.(null, businessCaseIntent, businessCaseId);
-      void aui.threadListItem().initialize().then((initializedThread) => {
-        const threadId = initializedThread.remoteId;
-        if (threadId) onStartBusinessCase?.(threadId, businessCaseIntent, businessCaseId);
-      });
-    } else {
-      onStartConversation?.(null);
-      void aui.threadListItem().initialize().then((initializedThread) => {
-        onStartConversation?.(initializedThread.remoteId ?? null);
-      });
-    }
-    composerRuntime.setText(prompt);
-    composerRuntime.send();
-  };
-
   return (
     <div className="dpl-welcome-message">
       <div className="dpl-welcome-bubble">
-        <p>I can help you create, manage, scale, and troubleshoot your data products. To get started, please <strong>select the intent that matches your role below</strong> or type your request directly in the chat!</p>
-        <div className="dpl-intent-groups">
-          {intentGroups.map((group) => (
-            <section className="dpl-intent-group" key={group.role} aria-label={`${group.role} intents`}>
-              <h2>{group.role}</h2>
-              <div className="dpl-intent-suggestions">
-                {group.suggestions.map((suggestion) => (
-                  <button key={suggestion.label} type="button" onClick={() => sendSuggestion(suggestion)}><span>{suggestion.label}</span>{suggestion.description && <span className="dpl-intent-info" aria-label={suggestion.description}><Info size={14} aria-hidden="true" /><span className="dpl-intent-tooltip" role="tooltip">{suggestion.description}</span></span>}</button>
-                ))}
-              </div>
-            </section>
-          ))}
+        <div className="dpl-request-home">
+          <div className="dpl-request-home-actions">
+            <button type="button" className="dpl-request-home-action dpl-request-home-action-primary" onClick={() => window.dispatchEvent(new Event("dpl-new-request"))}><span className="dpl-request-home-icon"><BadgePlus aria-hidden="true" /></span><span className="dpl-request-home-copy"><strong>Create new request</strong><small>Create a draft, choose an intention, and complete its One Pager.</small></span><ArrowUpRight className="dpl-request-home-arrow" aria-hidden="true" /></button>
+            <button type="button" className="dpl-request-home-action" onClick={() => window.dispatchEvent(new Event("dpl-review-jira"))}><span className="dpl-request-home-icon"><ClipboardCheck aria-hidden="true" /></span><span className="dpl-request-home-copy"><strong>Review Jira ticket</strong><small>Open a Jira-linked assessment workspace and determine the next lifecycle action.</small></span><ArrowUpRight className="dpl-request-home-arrow" aria-hidden="true" /></button>
+          </div>
         </div>
       </div>
     </div>
@@ -495,31 +461,39 @@ function Composer({ skills, onActivateSkill, variant }: { skills: SkillDefinitio
   );
 }
 
-export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onDelegate, onNewConversation, onStartBusinessCase, onStartConversation, hasBusinessCase = false, isNewConversation = false, onOpenBusinessCase, variant = "widget" }: ThreadProps) {
+export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onDelegate, onNewConversation, onStartBusinessCase, onStartConversation, hasBusinessCase = false, isBusinessCaseOpen = false, businessCaseLabel = "Request Workspace", isNewConversation = false, onOpenBusinessCase, variant = "widget" }: ThreadProps) {
   const aui = useAui();
   const [showDelegate, setShowDelegate] = useState(false);
   const [agentName, setAgentName] = useState(agents[0]?.name ?? "");
   const [delegatePrompt, setDelegatePrompt] = useState("");
   const [isWelcomeVisible, setIsWelcomeVisible] = useState(false);
+  const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
+  const activeConversationTitle = aui.threadListItem.source ? aui.threadListItem().getState()?.title : null;
+  const activeConversationId = aui.threadListItem.source ? aui.threadListItem().getState()?.remoteId ?? null : null;
+
+  useEffect(() => {
+    if (!activeConversationId) {
+      setInitialPrompt(null);
+      return;
+    }
+    void getThread(activeConversationId).then((thread) => setInitialPrompt(thread?.launch?.prompt ?? null));
+  }, [activeConversationId]);
 
   return (
     <ThreadPrimitive.Root className={`flex h-full min-h-0 flex-col ${variant === "standalone" ? "dpl-panel overflow-hidden" : ""}`}>
-      {variant === "standalone" && (
+      {variant === "standalone" && !isNewConversation && (
         <div className="dpl-chat-heading">
-          <div className="dpl-chat-heading-copy"><span aria-hidden="true">👋</span><p>Hi Natali! I&apos;m your Data Product Lifecycle Assistant.</p></div>
+          <div className="dpl-chat-heading-copy"><span aria-hidden="true">👋</span><div><p>Hi Natali! I&apos;m your Data Product Lifecycle Assistant.</p>{!isNewConversation && activeConversationTitle && <span className="dpl-active-chat-title">Current chat: {activeConversationTitle}</span>}</div></div>
           <div className="dpl-chat-heading-actions">
-            {!isWelcomeVisible && !isNewConversation && hasBusinessCase && <button type="button" className="dpl-business-case-button" onClick={onOpenBusinessCase}>One Pager</button>}
-            <button type="button" className="dpl-new-chat-button" onClick={() => { aui.threads().switchToNewThread(); onNewConversation?.(); }}>
-              <Plus className="h-3.5 w-3.5" /> New Chat
-            </button>
+            {!isWelcomeVisible && !isNewConversation && hasBusinessCase && <button type="button" className="dpl-business-case-button" aria-pressed={isBusinessCaseOpen} onClick={onOpenBusinessCase}>{isBusinessCaseOpen ? <EyeOff size={13} /> : <Eye size={13} />}{isBusinessCaseOpen ? `Hide ${businessCaseLabel}` : `Show ${businessCaseLabel}`}</button>}
             {agents.length > 0 && <button type="button" className="dpl-new-chat-button" onClick={() => setShowDelegate(true)}><Split className="h-3.5 w-3.5" /> Delegate</button>}
           </div>
         </div>
       )}
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
-        <div className={`mx-auto max-w-3xl px-4 py-8 ${variant === "standalone" ? "min-h-full" : ""}`}>
-          <ThreadPrimitive.Empty>
-            {variant === "standalone" ? <StandaloneWelcome onStartBusinessCase={onStartBusinessCase} onStartConversation={onStartConversation} onVisibleChange={setIsWelcomeVisible} /> : (
+        <div className={variant === "standalone" ? "mx-auto w-full max-w-none px-3 py-3 min-h-full" : "mx-auto max-w-3xl px-4 py-8"}>
+          {variant === "standalone" && isNewConversation ? <StandaloneWelcome onVisibleChange={setIsWelcomeVisible} /> : <ThreadPrimitive.Empty>
+            {variant === "standalone" ? initialPrompt ? <UserMessageFallback prompt={initialPrompt} /> : <div className="dpl-empty-conversation">No messages in this conversation yet.</div> : (
               <div className="flex h-full items-center justify-center pt-24">
                 <div className="text-center">
                   <h1 className="mb-2 text-2xl font-semibold text-neutral-200">SensAI</h1>
@@ -527,13 +501,13 @@ export function Thread({ skills, forms, agents, onActivateSkill, onOpenForm, onD
                 </div>
               </div>
             )}
-          </ThreadPrimitive.Empty>
-          <ThreadPrimitive.Messages
+          </ThreadPrimitive.Empty>}
+          {!isNewConversation && <ThreadPrimitive.Messages
             components={{ UserMessage: () => <UserMessage variant={variant} />, AssistantMessage: () => <AssistantMessage variant={variant} /> }}
-          />
+          />}
         </div>
       </ThreadPrimitive.Viewport>
-      <Composer skills={skills} onActivateSkill={onActivateSkill} variant={variant} />
+      {!(variant === "standalone" && isNewConversation) && <Composer skills={skills} onActivateSkill={onActivateSkill} variant={variant} />}
       {showDelegate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
           <form

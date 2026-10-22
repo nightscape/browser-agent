@@ -1,11 +1,18 @@
 import { openDB } from "./db";
 
+export const threadsChangedEvent = "dpl-threads-changed";
+
+function notifyThreadsChanged(): void {
+  window.dispatchEvent(new Event(threadsChangedEvent));
+}
+
 export interface ThreadMetadata {
   id: string;
   remoteId: string;
   externalId?: string;
   title?: string;
   status: "regular" | "archived";
+  pinned?: boolean;
   createdAt: number;
   workspaceId?: string;
   parentThreadId?: string;
@@ -56,7 +63,10 @@ export async function putThread(thread: ThreadMetadata): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction("threads", "readwrite");
     tx.objectStore("threads").put(thread);
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => {
+      notifyThreadsChanged();
+      resolve();
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -100,7 +110,10 @@ export async function deleteThread(id: string): Promise<void> {
       }
     };
 
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => {
+      notifyThreadsChanged();
+      resolve();
+    };
     tx.onerror = () => reject(tx.error);
   });
 }

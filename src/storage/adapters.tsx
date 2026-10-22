@@ -15,10 +15,10 @@ import type {
 import { RuntimeAdapterProvider } from "@assistant-ui/core/react";
 import { useAui } from "@assistant-ui/store";
 import {
+  deleteThread as deleteThreadFromDB,
   listThreads,
   getThread,
   putThread,
-  deleteThread as deleteThreadFromDB,
   getMessages,
   putMessage,
 } from "./threads";
@@ -46,8 +46,8 @@ class IndexedDBThreadHistoryAdapter implements ThreadHistoryAdapter {
 
     return {
       async append(item: MessageFormatItem<TMessage>): Promise<void> {
-        await adapter.aui.threadListItem().initialize();
-        const threadId = adapter.getThreadId();
+        const initializedThread = await adapter.aui.threadListItem().initialize();
+        const threadId = initializedThread.remoteId ?? adapter.getThreadId();
         if (!threadId) return;
 
         const encoded = formatAdapter.encode(item);
@@ -104,10 +104,34 @@ class IndexedDBThreadHistoryAdapter implements ThreadHistoryAdapter {
   }
 
   async load(): Promise<ExportedMessageRepository> {
-    return { messages: [] };
+    const threadId = this.getThreadId();
+    if (!threadId) return { messages: [] };
+
+    const stored = await getMessages(threadId);
+    return {
+      messages: stored
+        .filter((message) => message.format === "aui/v0")
+        .map((message) => ({
+          message: message.content as ThreadMessage,
+          parentId: message.parentId,
+        })),
+    };
   }
 
-  async append(_item: ExportedMessageRepositoryItem): Promise<void> {}
+  async append(item: ExportedMessageRepositoryItem): Promise<void> {
+    const initializedThread = await this.aui.threadListItem().initialize();
+    const threadId = initializedThread.remoteId ?? this.getThreadId();
+    if (!threadId) return;
+
+    await putMessage({
+      threadId,
+      messageId: item.message.id,
+      parentId: item.parentId,
+      format: "aui/v0",
+      content: item.message,
+      createdAt: Date.now(),
+    });
+  }
 }
 
 // ---- Thread list adapter with embedded history provider ----
