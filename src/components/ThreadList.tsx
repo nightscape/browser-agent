@@ -225,7 +225,7 @@ export function ThreadList({ skills, onSkillClick, onNewSkill, onConversationSel
 
   return (
     <ThreadListPrimitive.Root className={`flex h-full flex-col ${variant === "standalone" ? "dpl-panel w-full overflow-hidden p-3" : "border-r border-neutral-800 bg-neutral-950"}`}>
-      {variant === "standalone" && <div className="w-full px-1 pb-3"><ThreadListPrimitive.New onClick={() => { window.dispatchEvent(new Event("dpl-new-request")); onNewChat?.(); }} aria-label="New request" className="dpl-sidebar-new-chat"><Plus className="h-3.5 w-3.5" /><span>New request</span></ThreadListPrimitive.New></div>}
+      {variant === "standalone" && <div className="w-full px-1 pb-3"><button type="button" onClick={() => window.dispatchEvent(new Event("dpl-new-request"))} aria-label="New request" className="dpl-sidebar-new-chat"><Plus className="h-3.5 w-3.5" /><span>New request</span></button></div>}
       {variant === "widget" && <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
         <span className="text-sm font-semibold text-neutral-200">SensAI</span>
           <ThreadListPrimitive.New aria-label="New conversation" className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200">

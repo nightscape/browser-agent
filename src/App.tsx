@@ -17,6 +17,7 @@ import { SkillVariableDialog } from "./components/SkillVariableDialog";
 import { SkillEditorDialog } from "./components/SkillEditorDialog";
 import { WidgetHeader } from "./components/WidgetHeader";
 import { PageContextBar } from "./components/PageContextBar";
+import { RequestAccessButton } from "./components/RequestAccessButton";
 import { WidgetThreadDrawer } from "./components/WidgetThreadDrawer";
 import { DraftWorkspace, getRequestSummary, HelpWorkspace, LifecycleDashboard, PortalDashboard, RequestConversationsWorkspace, RequestWorkspace } from "./components/LifecycleDashboard";
 import { ArrowLeft, Bell } from "lucide-react";
@@ -195,14 +196,22 @@ function RequestStartDialog({ mode, onClose, onCreated }: {
     const prompt = mode === "request"
       ? `Start the intake for "${title}". First understand the request and recommend the most suitable intention from: Create Regular IT Data Product, Create Hybrid Data Product, Register Self-Service Data Product, Enhance Existing Data Product, Report Issue, or Request Retirement. Explain the recommendation briefly, then help complete the One Pager.`
       : `Review Jira ticket ${jiraKey.trim().toUpperCase()}. Identify missing information and recommend the next lifecycle action.`;
-    const initializedThread = await aui.threadListItem().initialize();
-    const threadId = initializedThread.remoteId;
+    let threadId: string | undefined;
+    if (mode === "request") {
+      threadId = crypto.randomUUID();
+    } else {
+      await aui.threads().switchToNewThread();
+      const initializedThread = await aui.threadListItem().initialize();
+      threadId = initializedThread.remoteId;
+    }
     if (!threadId) return;
     await putThread({ id: threadId, remoteId: threadId, title, status: "regular", createdAt: Date.now(), launch: { prompt, createdAt: Date.now() } });
     window.dispatchEvent(new CustomEvent("dpl-conversation-created", { detail: threadId }));
     onCreated(threadId, resolvedIntent, businessCaseId, mode === "request");
-    composer.setText(prompt);
-    composer.send();
+    if (mode === "jira") {
+      composer.setText(prompt);
+      composer.send();
+    }
     onClose();
   };
 
@@ -287,15 +296,27 @@ function AppInner({
 
   useEffect(() => {
     const openNewRequest = () => setRequestDialogMode("request");
+    const draftsDeleted = (event: Event) => {
+      const { threadIds } = (event as CustomEvent<{ threadIds: string[] }>).detail;
+      const nextIds = { ...businessCaseIdsRef.current };
+      const nextIntents = { ...businessCaseIntentsRef.current };
+      for (const id of threadIds) { delete nextIds[id]; delete nextIntents[id]; }
+      businessCaseIdsRef.current = nextIds;
+      businessCaseIntentsRef.current = nextIntents;
+      setBusinessCaseIds(nextIds);
+      setBusinessCaseIntents(nextIntents);
+    };
     const openJiraReview = () => setRequestDialogMode("jira");
     const openDrafts = () => { setActiveWorkspace("drafts"); setSelectedRequestName(null); setRightPanelMode("overview"); };
     const openDashboard = () => { setActiveWorkspace("dashboard"); setSelectedRequestName(null); setRightPanelMode("overview"); };
     window.addEventListener("dpl-new-request", openNewRequest);
+    window.addEventListener("dpl-drafts-deleted", draftsDeleted);
     window.addEventListener("dpl-review-jira", openJiraReview);
     window.addEventListener("dpl-open-drafts", openDrafts);
     window.addEventListener("dpl-open-dashboard", openDashboard);
     return () => {
       window.removeEventListener("dpl-new-request", openNewRequest);
+      window.removeEventListener("dpl-drafts-deleted", draftsDeleted);
       window.removeEventListener("dpl-review-jira", openJiraReview);
       window.removeEventListener("dpl-open-drafts", openDrafts);
       window.removeEventListener("dpl-open-dashboard", openDashboard);
@@ -396,7 +417,7 @@ function AppInner({
                 <ThreadList skills={sidebarSkills} onSkillClick={onActivateSkill} onNewSkill={onNewSkill} onConversationSelected={(threadId) => { selectedConversationIdRef.current = threadId; const hasBusinessCase = Boolean(threadId && businessCaseIntentsRef.current[threadId]); const businessCaseId = threadId ? businessCaseIdsRef.current[threadId] ?? threadId : null; setActiveBusinessCaseId(hasBusinessCase ? businessCaseId : null); setIsNewConversation(false); setIsBusinessCaseConnectionPending(false); setRightPanelMode(hasBusinessCase ? "businessCase" : "overview"); setActiveWorkspace("chat"); }} onConversationRemoved={(nextThreadId) => { const hasBusinessCase = Boolean(nextThreadId && businessCaseIntentsRef.current[nextThreadId]); const businessCaseId = nextThreadId ? businessCaseIdsRef.current[nextThreadId] ?? nextThreadId : null; selectedConversationIdRef.current = nextThreadId ?? pendingConversationId; setActiveBusinessCaseId(hasBusinessCase ? businessCaseId : null); setIsBusinessCaseConnectionPending(false); setIsNewConversation(nextThreadId === null); setRightPanelMode(hasBusinessCase ? "businessCase" : "overview"); setActiveWorkspace("chat"); }} onNewChat={() => { setActiveWorkspace("chat"); setSelectedRequestName(null); setActiveBusinessCaseId(null); setIsNewConversation(true); setRightPanelMode("overview"); }} onOpenCurrentRequests={() => { setActiveWorkspace("currentRequests"); setSelectedRequestName(null); setRightPanelMode("overview"); }} onOpenRequest={(name) => { setSelectedRequestName(name); setRightPanelMode("record"); setActiveWorkspace("chat"); }} onOpenArchive={() => { setActiveWorkspace("archive"); setSelectedRequestName(null); setRightPanelMode("overview"); }} onOpenHelp={() => { setActiveWorkspace("help"); setSelectedRequestName(null); setRightPanelMode("overview"); }} activeWorkspace={activeWorkspace} onOpenSettings={onOpenSettings} variant="standalone" showSkills={false} />
               </aside>
               <section className={`dpl-main-window${isRequestDashboardOpen ? " dpl-main-window-request" : ""}${activeWorkspace === "draftWorkspace" ? " dpl-main-window-draft" : ""}${activeWorkspace === "drafts" ? " dpl-main-window-drafts" : ""}${activeWorkspace === "currentRequests" || activeWorkspace === "archive" ? " dpl-main-window-requests" : ""}`}>
-              {isRequestDashboardOpen && selectedRequestName && <nav className="dpl-main-window-request-identity" aria-label="Request path"><button type="button" onClick={() => { setSelectedRequestName(null); setRightPanelMode("overview"); setActiveWorkspace("currentRequests"); }}><ArrowLeft size={13} />All requests</button><span aria-hidden="true">/</span><em title={getRequestSummary(selectedRequestName)?.title ?? selectedRequestName}>{getRequestSummary(selectedRequestName)?.title ?? selectedRequestName}</em></nav>}
+              {isRequestDashboardOpen && selectedRequestName && <nav className="dpl-main-window-request-identity" aria-label="Request path"><button type="button" onClick={() => { setSelectedRequestName(null); setRightPanelMode("overview"); setActiveWorkspace("currentRequests"); }}><ArrowLeft size={13} />All requests</button><span aria-hidden="true">/</span><em aria-current="page" title={`Workspace: ${getRequestSummary(selectedRequestName)?.title ?? selectedRequestName}`}>Workspace: {getRequestSummary(selectedRequestName)?.title ?? selectedRequestName}</em><RequestAccessButton requestName={selectedRequestName} requestTitle={getRequestSummary(selectedRequestName)?.title ?? selectedRequestName} owner={getRequestSummary(selectedRequestName)?.owner ?? ""} /></nav>}
               <main className="relative min-h-0">
                 {activeWorkspace === "dashboard" && <PortalDashboard onOpenRequests={() => setActiveWorkspace("currentRequests")} />}
                 {activeWorkspace === "drafts" && <div className="dpl-drafts-overlay"><RequestWorkspace scope="drafts" selectedRequestName={null} onSelectRequest={() => setActiveWorkspace("chat")} /></div>}

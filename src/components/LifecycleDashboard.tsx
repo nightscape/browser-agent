@@ -1,10 +1,13 @@
 import {
   ArrowLeft,
+  ArrowUpRight,
   ChevronDown,
   Check,
   Circle,
-  Clock3,
   ExternalLink,
+  Eye,
+  EyeOff,
+  FileText,
   Info,
   LayoutGrid,
   Pencil,
@@ -12,63 +15,102 @@ import {
   PinOff,
   Search,
   Send,
+  ShieldCheck,
   Trash2,
-  UserRound,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { listThreads, threadsChangedEvent, type ThreadMetadata } from "../storage/threads";
+import { deleteThread, getThread, listThreads, threadsChangedEvent, type ThreadMetadata } from "../storage/threads";
+import { loadSettings } from "../storage/settings";
+import { requestWorkingConversations } from "../storage/request-conversations";
+import { draftIntentions, type DraftIntention, type IntakeMessage, type IntakeResponse } from "../../shared/draft-intake";
 
 const businessCaseIdsStorageKey = "dpl-business-case-ids";
-
-const lifecycle = [
-  { label: "Planning", shortLabel: "Planning", state: "complete" },
-  { label: "Analysis", shortLabel: "Analysis", state: "complete" },
-  { label: "Design", shortLabel: "Design", state: "complete" },
-  { label: "Build & Test", shortLabel: "Build & Test", state: "active" },
-  { label: "Deployment", shortLabel: "Deployment", state: "pending" },
-  { label: "Consumption & Maintenance", shortLabel: "Consumption", state: "pending" },
-  { label: "Retirement", shortLabel: "Retirement", state: "pending" },
+const requestDomains = [
+  "Eurex Trading",
+  "Eurex Risk",
+  "Eurex Clearing",
+  "Global Products and Markets",
+  "Cash Trading",
+  "Eurex Repo",
+  "Eurex Cash Regulatory Reporting",
 ] as const;
 
-const stageDetails: Record<string, { description: string; tasks: readonly [string, "complete" | "active" | "pending"][] }> = {
-  Planning: {
-    description: "Validate the One Pager, strategic value, funding, and accountable delivery team.",
-    tasks: [["One Pager Submission", "complete"], ["Strategic Review", "complete"], ["Strategic Approval", "complete"], ["Funding Review", "complete"], ["Funding Approval", "complete"], ["Team Assignment", "complete"], ["Planning Completion Check", "complete"], ["One Pager Approved", "complete"], ["Planning Completed", "complete"]],
+const lifecycle = [
+  { label: "Inception & Scoping", shortLabel: "Inception & Scoping" },
+  { label: "Analysis & Design", shortLabel: "Analysis & Design" },
+  { label: "Build", shortLabel: "Build" },
+  { label: "Test & Deployment", shortLabel: "Test & Deployment" },
+  { label: "Consumption, Maintenance & Monitoring", shortLabel: "Consumption, Maintenance & Monitoring" },
+  { label: "Retirement", shortLabel: "Retirement" },
+] as const;
+
+type LifecycleStage = (typeof lifecycle)[number]["label"];
+type LifecycleTask = { name: string; responsible?: string; optional?: boolean };
+const stageDetails: Record<LifecycleStage, { description: string; tasks: LifecycleTask[] }> = {
+  "Inception & Scoping": {
+    description: "Review the request, confirm domain ownership, and approve or reject its scope. In draft mode, the sub-step is N/A: the lifecycle has not yet been triggered.",
+    tasks: [
+      { name: "Request Under Review", responsible: "Domain Owner + Requester" },
+      { name: "Domain Reassigned", responsible: "Current Domain Owner → New Domain Owner", optional: true },
+      { name: "Request Approved or Request Rejected" },
+    ],
   },
-  Analysis: {
-    description: "Define, approve, and register the business requirements and Business Data Contract.",
-    tasks: [["Analysis Initiated", "complete"], ["Business Requirements Preparation", "complete"], ["Business Requirements Review", "complete"], ["Business Requirements Approved", "complete"], ["Business Data Contract Registration", "complete"], ["Business Data Contract Registered", "complete"], ["Analysis Completed", "complete"]],
+  "Analysis & Design": {
+    description: "Initiate analysis, prepare requirements, and complete prioritization.",
+    tasks: [
+      { name: "Analysis Initiation", responsible: "DPO" },
+      { name: "Requirements In Progress", responsible: "DPO + Requester + Business Data Steward + Pod IT Lead + AI Assistant" },
+      { name: "Requirements Completed & Prioritization" },
+    ],
   },
-  Design: {
-    description: "Establish the technical design, delivery estimate, governance review, and implementation plan.",
-    tasks: [["Design Initiated", "complete"], ["Technical Design Preparation", "complete"], ["Technical Design Review", "complete"], ["Cost Estimation & Delivery Planning", "complete"], ["Cost Estimation Submitted", "complete"], ["Cost Review", "complete"], ["Funding Re-Approval (if required)", "complete"], ["Design Completed", "complete"]],
+  Build: {
+    description: "Provision infrastructure and implement the data product.",
+    tasks: [
+      { name: "Infrastructure Provisioning", responsible: "Pod IT Lead + DevOps + AI Assistant" },
+      { name: "Infrastructure Provisioned" },
+      { name: "Implementation Started", responsible: "Developers / Data Engineers + Pod IT Lead" },
+      { name: "Implementation Completed", responsible: "Developers / Data Engineers + AI Pair" },
+    ],
   },
-  "Build & Test": {
-    description: "Build the approved design, validate quality and controls, and obtain readiness for release.",
-    tasks: [["Build Initiated", "complete"], ["Implementation", "complete"], ["Data Quality Validation", "complete"], ["Integration Testing", "active"], ["User Acceptance Testing", "pending"], ["Release Readiness Review", "pending"], ["Build & Test Completed", "pending"]],
+  "Test & Deployment": {
+    description: "Complete CM control, acceptance testing, deployment, and publishing.",
+    tasks: [
+      { name: "CM Control", responsible: "Release Manager + Pod IT Lead" },
+      { name: "In Test", responsible: "Acceptance Team + DPO + IT Data Steward" },
+      { name: "Test Completed", responsible: "DPO + Requester + Acceptance Team" },
+      { name: "Deployment & Publishing Completed", responsible: "Release Engineer + Automated Pipeline" },
+    ],
   },
-  Deployment: {
-    description: "Deploy the validated product, complete production checks, and confirm operational handover.",
-    tasks: [["Deployment Planning", "pending"], ["Production Deployment", "pending"], ["Production Validation", "pending"], ["Operational Handover", "pending"], ["Deployment Completed", "pending"]],
-  },
-  "Consumption & Maintenance": {
-    description: "Operate the product, support consumers, and review quality, usage, and ongoing value.",
-    tasks: [["Consumer Onboarding", "pending"], ["Usage Monitoring", "pending"], ["Data Quality Monitoring", "pending"], ["Service Review", "pending"], ["Maintenance Completed", "pending"]],
+  "Consumption, Maintenance & Monitoring": {
+    description: "Onboard consumers, monitor usage and data quality, review service health, and maintain the product until retirement begins.",
+    tasks: [
+      { name: "Consumer Onboarding" },
+      { name: "Usage Monitoring" },
+      { name: "Data Quality Monitoring" },
+      { name: "Service Review" },
+      { name: "Maintenance Completed" },
+    ],
   },
   Retirement: {
-    description: "Retire the product safely by informing consumers, preserving required records, and closing delivery ownership.",
-    tasks: [["Retirement Assessment", "pending"], ["Consumer Communication", "pending"], ["Data Retention Confirmation", "pending"], ["Access Decommissioning", "pending"], ["Retirement Completed", "pending"]],
+    description: "Retire the product safely, inform consumers, preserve required records, and close delivery ownership.",
+    tasks: [
+      { name: "Retirement Assessment" },
+      { name: "Consumer Communication" },
+      { name: "Data Retention Confirmation" },
+      { name: "Access Decommissioning" },
+      { name: "Retirement Completed" },
+    ],
   },
 };
 
 const requestedProcesses = [
-  { name: "C7", requestId: "TRD-2024-001", requestJira: "EXDPL-1041", atlanContractUrl: "https://atlan.example.com/contracts/TRD-2024-001", title: "C7 Trading Data Product", dataProductType: "Create Regular IT Data Product", requester: "Natali Karlova-B.", domain: "Trading", businessJira: "EXDPL-1042", technicalJira: "EXDPL-1043", intent: "Create data product", stage: "Design", currentSubstep: "Technical Design Review", currentOwner: "Delivery Team Lead", sla: "3 days left", decision: "Awaiting review", updated: "Updated today", progress: 40, status: "In Progress", dataProductOwner: "Natali Karlova-B.", domainOwner: "Markus Meyer", itCounterpart: "Anna Müller", created: "May 14, 2024", action: "Review technical design" },
-  { name: "MMPM", requestId: "GMP-2024-002", requestJira: "EXDPL-1044", atlanContractUrl: "https://atlan.example.com/contracts/GMP-2024-002", title: "MMPM Data Product", dataProductType: "Create Hybrid Data Product", requester: "Andreas Müller", domain: "Global Markets & Products", businessJira: "EXDPL-1045", technicalJira: "EXDPL-1046", intent: "Create data product (POC available)", stage: "Analysis", currentSubstep: "Business Requirements Preparation", currentOwner: "Data Product Owner", sla: "Due tomorrow", decision: "Awaiting input", updated: "Updated 2h ago", progress: 60, status: "Waiting", dataProductOwner: "Andreas Müller", domainOwner: "Sofia Weber", itCounterpart: "David Klein", created: "May 12, 2024", action: "Complete business requirements" },
-  { name: "Reference Data", requestId: "CLR-2024-003", requestJira: "EXDPL-1047", atlanContractUrl: "https://atlan.example.com/contracts/CLR-2024-003", title: "Reference Data Retirement", dataProductType: "Request Retirement", requester: "Daniel Peters", domain: "Clearing", businessJira: "EXDPL-1048", technicalJira: "EXDPL-1049", intent: "Request retirement", stage: "Retirement", currentSubstep: "Retirement completed", currentOwner: "Data Product Owner", sla: "Completed", decision: "Approved", updated: "Updated May 6", progress: 100, status: "Completed", dataProductOwner: "Daniel Peters", domainOwner: "Sabine Keller", itCounterpart: "Felix Roth", created: "May 06, 2024", action: "Retirement completed" },
-  { name: "Orders & Quotes", requestId: "TRD-2024-004", requestJira: "EXDPL-1050", atlanContractUrl: "https://atlan.example.com/contracts/TRD-2024-004", title: "Orders & Quotes Quality Issue", dataProductType: "Report Issue", requester: "Daniel Peters", domain: "Trading", businessJira: "EXDPL-1051", technicalJira: "EXDPL-1052", intent: "Report issue", stage: "Analysis", currentSubstep: "Business Requirements Review", currentOwner: "Data Product Owner", sla: "1 day left", decision: "Awaiting approval", updated: "Updated today", progress: 80, status: "In Progress", dataProductOwner: "Daniel Peters", domainOwner: "Julia Fischer", itCounterpart: "Martin Bauer", created: "May 10, 2024", action: "Review business requirements" },
-  { name: "M2M", requestId: "RSK-2024-005", requestJira: "EXDPL-1053", atlanContractUrl: "https://atlan.example.com/contracts/RSK-2024-005", title: "M2M Product Enhancement", dataProductType: "Enhance Existing Data Product", requester: "Natali Karlova-B.", domain: "Risk", businessJira: "EXDPL-1054", technicalJira: "EXDPL-1055", intent: "Enhance existing data product", stage: "Design", currentSubstep: "Cost Estimation & Delivery Planning", currentOwner: "Delivery Team Lead", sla: "5 days left", decision: "No decision yet", updated: "Updated yesterday", progress: 15, status: "In Progress", dataProductOwner: "Natali Karlova-B.", domainOwner: "Lena Hoffmann", itCounterpart: "Thomas Wagner", created: "May 08, 2024", action: "Prepare delivery plan" },
-  { name: "Market Data Portal", requestId: "GMP-2024-006", requestJira: "EXDPL-1056", atlanContractUrl: "https://atlan.example.com/contracts/GMP-2024-006", title: "Market Data Portal Self-Service Registration", dataProductType: "Register Self-Service Data Product", requester: "Sofia Weber", domain: "Global Markets & Products", businessJira: "EXDPL-1057", technicalJira: "EXDPL-1058", intent: "Register self-service data product", stage: "Analysis", currentSubstep: "Business Data Contract Registration", currentOwner: "Data Product Owner", sla: "4 days left", decision: "Awaiting review", updated: "Updated today", progress: 45, status: "In Progress", dataProductOwner: "Sofia Weber", domainOwner: "Andreas Müller", itCounterpart: "David Klein", created: "May 16, 2024", action: "Register business data contract" },
-  { name: "Legacy Risk Feed", requestId: "RSK-2024-007", requestJira: "EXDPL-1059", atlanContractUrl: "https://atlan.example.com/contracts/RSK-2024-007", title: "Legacy Risk Feed Retirement", dataProductType: "Request Retirement", requester: "Lena Hoffmann", domain: "Risk", businessJira: "EXDPL-1060", technicalJira: "EXDPL-1061", intent: "Request retirement", stage: "Planning", currentSubstep: "One Pager Approved", currentOwner: "Data Product Owner", sla: "6 days left", decision: "Awaiting approval", updated: "Updated yesterday", progress: 10, status: "Waiting", dataProductOwner: "Lena Hoffmann", domainOwner: "Thomas Wagner", itCounterpart: "Felix Roth", created: "May 15, 2024", action: "Confirm retirement scope" },
+  { name: "C7", requestId: "TRD-2024-001", requestJira: "EXDPL-1041", atlanContractUrl: "https://atlan.example.com/contracts/TRD-2024-001", title: "C7 Trading Data Product", dataProductType: "Create Regular IT Data Product", requester: "Natali Karlova-B.", domain: "Eurex Trading", businessJira: "EXDPL-1042", technicalJira: "EXDPL-1043", intent: "Create data product", stage: "Analysis & Design", currentSubstep: "Requirements In Progress", sla: "3 days left", decision: "Awaiting review", updated: "Updated today", progress: 25, status: "In Progress", dataProductOwner: "Natali Karlova-B.", domainOwner: "Markus Meyer", itCounterpart: "Anna Müller", created: "May 14, 2024", action: "Review requirements" },
+  { name: "MMPM", requestId: "GMP-2024-002", requestJira: "EXDPL-1044", atlanContractUrl: "https://atlan.example.com/contracts/GMP-2024-002", title: "MMPM Data Product", dataProductType: "Create Hybrid Data Product", requester: "Andreas Müller", domain: "Global Products and Markets", businessJira: "EXDPL-1045", technicalJira: "EXDPL-1046", intent: "Create data product (POC available)", stage: "Analysis & Design", currentSubstep: "Analysis Initiation", sla: "Due tomorrow", decision: "Awaiting input", updated: "Updated 2h ago", progress: 25, status: "Waiting", dataProductOwner: "Andreas Müller", domainOwner: "Sofia Weber", itCounterpart: "David Klein", created: "May 12, 2024", action: "Initiate analysis" },
+  { name: "Reference Data", requestId: "CLR-2024-003", requestJira: "EXDPL-1047", atlanContractUrl: "https://atlan.example.com/contracts/CLR-2024-003", title: "Reference Data Retirement", dataProductType: "Request Retirement", requester: "Daniel Peters", domain: "Eurex Clearing", businessJira: "EXDPL-1048", technicalJira: "EXDPL-1049", intent: "Request retirement", stage: "Retirement", currentSubstep: "Retirement Completed", sla: "Completed", decision: "Approved", updated: "Updated May 6", progress: 100, status: "Completed", dataProductOwner: "Daniel Peters", domainOwner: "Sabine Keller", itCounterpart: "Felix Roth", created: "May 06, 2024", action: "Retirement Completed" },
+  { name: "Orders & Quotes", requestId: "TRD-2024-004", requestJira: "EXDPL-1050", atlanContractUrl: "https://atlan.example.com/contracts/TRD-2024-004", title: "Orders & Quotes Quality Issue", dataProductType: "Report Issue", requester: "Daniel Peters", domain: "Eurex Trading", businessJira: "EXDPL-1051", technicalJira: "EXDPL-1052", intent: "Report issue", stage: "Test & Deployment", currentSubstep: "In Test", sla: "1 day left", decision: "Awaiting approval", updated: "Updated today", progress: 75, status: "In Progress", dataProductOwner: "Daniel Peters", domainOwner: "Julia Fischer", itCounterpart: "Martin Bauer", created: "May 10, 2024", action: "Complete acceptance testing" },
+  { name: "M2M", requestId: "RSK-2024-005", requestJira: "EXDPL-1053", atlanContractUrl: "https://atlan.example.com/contracts/RSK-2024-005", title: "M2M Product Enhancement", dataProductType: "Enhance Existing Data Product", requester: "Natali Karlova-B.", domain: "Eurex Risk", businessJira: "EXDPL-1054", technicalJira: "EXDPL-1055", intent: "Enhance existing data product", stage: "Build", currentSubstep: "Infrastructure Provisioning", sla: "5 days left", decision: "No decision yet", updated: "Updated yesterday", progress: 50, status: "In Progress", dataProductOwner: "Natali Karlova-B.", domainOwner: "Lena Hoffmann", itCounterpart: "Thomas Wagner", created: "May 08, 2024", action: "Provision infrastructure" },
+  { name: "Market Data Portal", requestId: "GMP-2024-006", requestJira: "EXDPL-1056", atlanContractUrl: "https://atlan.example.com/contracts/GMP-2024-006", title: "Market Data Portal Self-Service Registration", dataProductType: "Register Self-Service Data Product", requester: "Sofia Weber", domain: "Global Products and Markets", businessJira: "EXDPL-1057", technicalJira: "EXDPL-1058", intent: "Register self-service data product", stage: "Analysis & Design", currentSubstep: "Requirements Completed & Prioritization", sla: "4 days left", decision: "Awaiting review", updated: "Updated today", progress: 25, status: "In Progress", dataProductOwner: "Sofia Weber", domainOwner: "Andreas Müller", itCounterpart: "David Klein", created: "May 16, 2024", action: "Prioritize requirements" },
+  { name: "Legacy Risk Feed", requestId: "RSK-2024-007", requestJira: "EXDPL-1059", atlanContractUrl: "https://atlan.example.com/contracts/RSK-2024-007", title: "Legacy Risk Feed Retirement", dataProductType: "Request Retirement", requester: "Lena Hoffmann", domain: "Eurex Risk", businessJira: "EXDPL-1060", technicalJira: "EXDPL-1061", intent: "Request retirement", stage: "Inception & Scoping", currentSubstep: "Request Under Review", sla: "6 days left", decision: "Awaiting approval", updated: "Updated yesterday", progress: 0, status: "Waiting", dataProductOwner: "Lena Hoffmann", domainOwner: "Thomas Wagner", itCounterpart: "Felix Roth", created: "May 15, 2024", action: "Review request scope" },
 ] as const;
 
 type RequestedProcess = (typeof requestedProcesses)[number];
@@ -97,7 +139,7 @@ export function getPinnedRequestNames() {
 export function getRequestSummary(name: string | null) {
   if (!name) return undefined;
   const request = requestedProcesses.find((process) => process.name === name);
-  return request ? { title: request.title, requestId: request.requestId } : undefined;
+  return request ? { title: request.title, requestId: request.requestId, owner: request.requester } : undefined;
 }
 
 const completedAtByRequestId: Record<string, string> = {
@@ -114,15 +156,26 @@ function isArchivedRequest(request: RequestedProcess) {
 export function PortalDashboard({ onOpenRequests }: { onOpenRequests: () => void }) {
   const activeRequests = requestedProcesses.filter((request) => !isArchivedRequest(request));
   const domainProductCounts = [
-    { domain: "Trading", count: 68 },
-    { domain: "Clearing", count: 39 },
-    { domain: "Risk", count: 44 },
-    { domain: "Global Markets & Products", count: 33 },
+    { domain: requestDomains[0], count: 68 },
+    { domain: requestDomains[1], count: 44 },
+    { domain: requestDomains[2], count: 39 },
+    { domain: requestDomains[3], count: 33 },
+    { domain: requestDomains[4], count: 0 },
+    { domain: requestDomains[5], count: 0 },
+    { domain: requestDomains[6], count: 0 },
   ];
   const onboardedProducts = domainProductCounts.reduce((total, { count }) => total + count, 0);
   const inProgressRequests = activeRequests.filter((request) => request.status === "In Progress").length;
   const waitingRequests = activeRequests.filter((request) => request.status === "Waiting").length;
   const maxDomainCount = Math.max(...domainProductCounts.map(({ count }) => count), 1);
+  const stageDurations = [
+    { stage: "Inception & Scoping", days: 8 },
+    { stage: "Analysis & Design", days: 17 },
+    { stage: "Build", days: 22 },
+    { stage: "Test & Deployment", days: 5 },
+  ];
+  const averageCreationDays = stageDurations.reduce((total, { days }) => total + days, 0);
+  const longestStageDays = Math.max(...stageDurations.map(({ days }) => days));
 
   return <section className="dpl-panel dpl-portal-dashboard" aria-label="Data product dashboard">
     <div className="dpl-section-heading"><div><h2>Dashboard</h2><p>Data product onboarding and request activity at a glance.</p></div><button type="button" className="dpl-link-button" onClick={onOpenRequests}>View all requests</button></div>
@@ -136,35 +189,65 @@ export function PortalDashboard({ onOpenRequests }: { onOpenRequests: () => void
       <div><h3 id="dashboard-domains-heading">Data products by domain</h3><span>All tracked requests</span></div>
       <div className="dpl-domain-bars">{domainProductCounts.map(({ domain, count }) => <div key={domain}><span>{domain}</span><div aria-label={`${domain}: ${count} onboarded data products`}><i style={{ width: `${(count / maxDomainCount) * 100}%` }} /></div><strong>{count}</strong></div>)}</div>
     </section>
+    <section className="dpl-dashboard-duration" aria-labelledby="dashboard-duration-heading">
+      <div className="dpl-dashboard-duration-heading"><div><h3 id="dashboard-duration-heading">Average data product creation time</h3><p>Inception through Deployment · Calendar days · Illustrative data</p></div><strong>{averageCreationDays}<small> days</small></strong></div>
+      <div className="dpl-dashboard-stage-durations" aria-label="Average time per creation stage">
+        {stageDurations.map(({ stage, days }) => <div key={stage}><span>{stage}</span><div className="dpl-dashboard-duration-track"><i style={{ width: `${days / longestStageDays * 100}%` }} /></div><strong>{days} days</strong></div>)}
+      </div>
+    </section>
   </section>;
 }
 
-function BusinessCaseTemplate({ businessCaseId }: { businessCaseId: string }) {
+function useTemplateDraft(storageKey: string, requestType?: string) {
   const formRef = useRef<HTMLFormElement>(null);
-  const storageKey = `dpl-business-case-draft:${businessCaseId}`;
 
   useEffect(() => {
     const savedDraft = window.localStorage.getItem(storageKey);
     if (!savedDraft || !formRef.current) return;
-    const values = JSON.parse(savedDraft) as Record<string, string>;
+    const values = { ...JSON.parse(savedDraft) as Record<string, string>, ...(requestType ? { productType: requestType } : {}) };
     Object.entries(values).forEach(([name, value]) => {
       const field = formRef.current?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
       if (field) field.value = value;
     });
-  }, [storageKey]);
+  }, [storageKey, requestType]);
 
   const persistDraft = () => {
     if (!formRef.current) return;
-    const values = Object.fromEntries(new FormData(formRef.current).entries()) as Record<string, string>;
+    const values = { ...Object.fromEntries(new FormData(formRef.current).entries()), ...(requestType ? { productType: requestType } : {}) };
     window.localStorage.setItem(storageKey, JSON.stringify(values));
   };
 
+  return { formRef, persistDraft };
+}
+
+function DraftSubmissionActions({ title, onSave }: { title: string; onSave: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [submissionError, setSubmissionError] = useState("");
+
+  return <>
+    <div className="dpl-business-case-actions"><button type="button" className="dpl-business-case-submit" onClick={() => { setSubmissionError(""); dialogRef.current?.showModal(); }}>Submit</button></div>
+    <dialog ref={dialogRef} className="dpl-request-dialog dpl-submit-confirmation" aria-labelledby="draft-submit-title" aria-describedby="draft-submit-description">
+      <div><h2 id="draft-submit-title">Submit {title}?</h2><p id="draft-submit-description">Are you sure you want to submit this template? Submission will create a Jira ticket and trigger the lifecycle process. Choose Keep editing to leave it as a draft.</p></div>
+      <footer><button type="button" autoFocus onClick={() => dialogRef.current?.close()}>Keep editing</button><button type="button" className="dpl-business-case-submit" onClick={() => {
+        onSave();
+        dialogRef.current?.close();
+        setSubmissionError("Submission is not connected to the lifecycle service yet. Your draft is saved; no Jira ticket has been created and no process has been triggered.");
+      }}>Confirm submission</button></footer>
+    </dialog>
+    {submissionError && <p role="alert" className="dpl-request-workspace-note">{submissionError}</p>}
+  </>;
+}
+
+function BusinessCaseTemplate({ businessCaseId, readOnly = false, intention }: { businessCaseId: string; readOnly?: boolean; intention?: DraftIntention }) {
+  const { formRef, persistDraft } = useTemplateDraft(`dpl-business-case-draft:${businessCaseId}`, intention);
+
   return (
     <section className="dpl-panel dpl-business-case" aria-label="One Pager">
-      <div className="dpl-section-heading"><div><h2>One Pager</h2><p>Capture the request before it enters the Planning stage.</p></div></div>
-      <form ref={formRef} className="dpl-business-case-form" onInput={persistDraft}>
-        <TemplateField label="Request Type" open><select name="productType" aria-label="Request Type" defaultValue=""><option value="" disabled>Select a type</option><option>Create Regular IT Data Product</option><option>Create Hybrid Data Product</option><option>Register Self-Service Data Product</option><option>Enhance Existing Data Product</option><option>Report Issue</option><option>Request Retirement</option></select></TemplateField>
-        <TemplateField label="Ownership"><select name="ownership" aria-label="Ownership" defaultValue=""><option value="" disabled>Select a domain</option><option>Trading</option><option>Clearing</option><option>Risk</option><option>Global Markets & Products</option></select></TemplateField>
+      <div className="dpl-section-heading"><div><h2>One Pager</h2><p>{readOnly ? "Submitted Business Jira record." : "Capture the request before review in Inception & Scoping."}</p></div></div>
+      <form ref={formRef} className="dpl-business-case-form" onInput={readOnly ? undefined : persistDraft}>
+        <fieldset disabled={readOnly} className="dpl-one-pager-fields">
+        <TemplateField label="Request Type" open><select name="productType" aria-label="Request Type" defaultValue={intention ?? ""} disabled={Boolean(intention)}><option value="" disabled>Select a type</option>{draftIntentions.map((value) => <option key={value}>{value}</option>)}</select></TemplateField>
+        <TemplateField label="Ownership"><select name="ownership" aria-label="Ownership" defaultValue=""><option value="" disabled>Select a domain</option>{requestDomains.map((domain) => <option key={domain}>{domain}</option>)}</select></TemplateField>
         <TemplateField label="Purpose"><textarea name="purpose" aria-label="Purpose" rows={2} placeholder="Captured purpose" /></TemplateField>
         <TemplateField label="Contents"><textarea name="contents" aria-label="Contents" rows={2} placeholder="Captured entities" /></TemplateField>
         <TemplateField label="Existing Data Products"><textarea name="existingProducts" aria-label="Existing Data Products" rows={2} placeholder="Identified products or None" /></TemplateField>
@@ -177,7 +260,8 @@ function BusinessCaseTemplate({ businessCaseId }: { businessCaseId: string }) {
         <TemplateField label="Key Characteristics"><textarea name="keyCharacteristics" aria-label="Key Characteristics" rows={2} placeholder="Real-Time, End-of-Day, Regulatory, Reusable, Critical, Internal, External" /></TemplateField>
         <TemplateField label="Estimated Investment"><select name="investmentBracket" aria-label="Estimated Investment" defaultValue=""><option value="" disabled>Select an investment bracket</option><option>Less than EUR 50k</option><option>EUR 50k-EUR 200k</option><option>EUR 200k-EUR 500k</option><option>More than EUR 500k</option><option>Unknown</option></select></TemplateField>
         <TemplateField label="Business Sponsor"><input name="businessSponsor" aria-label="Business Sponsor" placeholder="VP, Director, or Head of Unit" /></TemplateField>
-        <div className="dpl-business-case-actions"><button type="button" className="dpl-business-case-submit">Submit</button></div>
+        </fieldset>
+        {!readOnly && <DraftSubmissionActions title="One Pager" onSave={persistDraft} />}
       </form>
     </section>
   );
@@ -207,52 +291,21 @@ const intentTemplates = {
 
 type IntentTemplate = (typeof intentTemplates)[keyof typeof intentTemplates];
 
-function IntentTemplateForm({ businessCaseId, template }: { businessCaseId: string; template: IntentTemplate }) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const storageKey = `dpl-intent-template-draft:${businessCaseId}`;
-
-  useEffect(() => {
-    const savedDraft = window.localStorage.getItem(storageKey);
-    if (!savedDraft || !formRef.current) return;
-    const values = JSON.parse(savedDraft) as Record<string, string>;
-    Object.entries(values).forEach(([name, value]) => {
-      const field = formRef.current?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
-      if (field) field.value = value;
-    });
-  }, [storageKey]);
-
-  const persistDraft = () => {
-    if (!formRef.current) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(new FormData(formRef.current).entries())));
-  };
+function IntentTemplateForm({ businessCaseId, template, allowSubmission = false }: { businessCaseId: string; template: IntentTemplate; allowSubmission?: boolean }) {
+  const { formRef, persistDraft } = useTemplateDraft(`dpl-intent-template-draft:${businessCaseId}`);
 
   return <section className="dpl-panel dpl-business-case" aria-label={`${template.title} template`}>
     <div className="dpl-section-heading"><div><h2>{template.title}</h2><p>{template.description}</p></div></div>
     <form ref={formRef} className="dpl-business-case-form" onInput={persistDraft}>
       {template.fields.map((label, index) => <TemplateField key={label} label={label} open={index === 0}><textarea name={toFieldName(label)} aria-label={label} rows={2} placeholder={`Add ${label.toLowerCase()}`} /></TemplateField>)}
-      <div className="dpl-business-case-actions"><button type="button" className="dpl-business-case-submit">Save draft</button></div>
+      <div className="dpl-business-case-actions"><button type="button" className="dpl-business-case-submit" onClick={persistDraft}>Save draft</button></div>
+      {allowSubmission && <DraftSubmissionActions title={template.title} onSave={persistDraft} />}
     </form>
   </section>;
 }
 
 function BusinessRequirementsTemplate({ businessCaseId }: { businessCaseId: string }) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const storageKey = `dpl-business-requirements-draft:${businessCaseId}`;
-
-  useEffect(() => {
-    const savedDraft = window.localStorage.getItem(storageKey);
-    if (!savedDraft || !formRef.current) return;
-    const values = JSON.parse(savedDraft) as Record<string, string>;
-    Object.entries(values).forEach(([name, value]) => {
-      const field = formRef.current?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-      if (field) field.value = value;
-    });
-  }, [storageKey]);
-
-  const persistDraft = () => {
-    if (!formRef.current) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(new FormData(formRef.current).entries())));
-  };
+  const { formRef, persistDraft } = useTemplateDraft(`dpl-business-requirements-draft:${businessCaseId}`);
 
   return <section className="dpl-panel dpl-business-case" aria-label="Business Requirements Jira template">
     <form ref={formRef} className="dpl-business-case-form" onInput={persistDraft}>
@@ -276,23 +329,7 @@ const technicalDesignSections = [
 ] as const;
 
 function TechnicalDesignTemplate({ businessCaseId }: { businessCaseId: string }) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const storageKey = `dpl-technical-design-draft:${businessCaseId}`;
-
-  useEffect(() => {
-    const savedDraft = window.localStorage.getItem(storageKey);
-    if (!savedDraft || !formRef.current) return;
-    const values = JSON.parse(savedDraft) as Record<string, string>;
-    Object.entries(values).forEach(([name, value]) => {
-      const field = formRef.current?.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
-      if (field) field.value = value;
-    });
-  }, [storageKey]);
-
-  const persistDraft = () => {
-    if (!formRef.current) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(new FormData(formRef.current).entries())));
-  };
+  const { formRef, persistDraft } = useTemplateDraft(`dpl-technical-design-draft:${businessCaseId}`);
 
   return <section className="dpl-panel dpl-business-case" aria-label="Technical Design Jira template">
     <div className="dpl-section-heading"><div><h2>Technical Design Jira</h2><p>Define implementation, infrastructure, governance, and operational readiness requirements.</p></div></div>
@@ -308,16 +345,15 @@ function TechnicalDesignTemplate({ businessCaseId }: { businessCaseId: string })
 
 type RequestScope = "current" | "assignedToMe" | "createdByMe" | "drafts" | "archive";
 
-function RunningRequestsOverview({ selectedRequestName, onSelectRequest, scope }: { selectedRequestName: string | null; onSelectRequest: (name: string) => void; scope: RequestScope }) {
+function RunningRequestsOverview({ selectedRequestName, onSelectRequest, scope }: { selectedRequestName: string | null; onSelectRequest: (name: string) => void; scope: Exclude<RequestScope, "drafts"> }) {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [requestTab, setRequestTab] = useState<"current" | "assignedToMe" | "createdByMe">(scope === "createdByMe" ? "createdByMe" : "current");
   const [pinnedRequestNames, setPinnedRequestNames] = useState<string[]>(getPinnedRequestNames);
   const resolvedScope = scope === "current" ? requestTab : scope;
   const scopedProcesses = resolvedScope === "archive"
     ? requestedProcesses.filter(isArchivedRequest)
-    : resolvedScope === "drafts" ? [] : requestedProcesses.filter((process) => !isArchivedRequest(process) && (resolvedScope !== "createdByMe" || process.requester === currentPortalUser) && (resolvedScope !== "assignedToMe" || requestAssigneeByName[process.name] === currentPortalUser));
+    : requestedProcesses.filter((process) => !isArchivedRequest(process) && (resolvedScope !== "createdByMe" || process.requester === currentPortalUser) && (resolvedScope !== "assignedToMe" || requestAssigneeByName[process.name] === currentPortalUser));
   const isArchive = resolvedScope === "archive";
-  const isDrafts = resolvedScope === "drafts";
   const isCreatedByMe = resolvedScope === "createdByMe";
   const isAssignedToMe = resolvedScope === "assignedToMe";
   const visibleProcesses = isArchive || selectedStatus === "All"
@@ -334,15 +370,14 @@ function RunningRequestsOverview({ selectedRequestName, onSelectRequest, scope }
 
   return (
     <section className="dpl-panel dpl-running-overview" aria-label="Running requests overview">
-      {scope === "current" && <div className="dpl-request-scope-tabs" role="tablist" aria-label="Request scope"><button type="button" role="tab" aria-selected={requestTab === "current"} className={requestTab === "current" ? "active" : ""} onClick={() => setRequestTab("current")}>All</button><button type="button" role="tab" aria-selected={requestTab === "createdByMe"} className={requestTab === "createdByMe" ? "active" : ""} onClick={() => setRequestTab("createdByMe")}>Created by me</button><button type="button" role="tab" aria-selected={requestTab === "assignedToMe"} className={requestTab === "assignedToMe" ? "active" : ""} onClick={() => setRequestTab("assignedToMe")}>Assigned to me</button></div>}
-      <div className="dpl-section-heading"><div><h2>{isArchive ? "Archive" : isDrafts ? "Drafts" : isAssignedToMe ? "Assigned to me" : isCreatedByMe ? "Created by me" : "All requests"}</h2><p>{isArchive ? "Completed, cancelled, rejected, and retired requests retained for reference." : isDrafts ? "Draft conversations remain under Drafts until their One Pager is submitted." : isAssignedToMe ? "Requests with Jira work currently assigned to you." : isCreatedByMe ? "Requests you created in the portal." : "Track in-progress, waiting, and recently completed requests."}</p></div><div className="dpl-overview-header-note"><Info size={14} /><span>{isDrafts ? "Open a draft conversation from the sidebar to continue its intake." : "Select a request to view its lifecycle dashboard."}</span></div></div>
-      {!isArchive && !isDrafts && <div className="dpl-process-tabs" aria-label="Request status filter">
+      {scope === "current" && <div className="dpl-request-scope-tabs" role="tablist" aria-label="Request scope"><button type="button" role="tab" aria-selected={requestTab === "current"} className={requestTab === "current" ? "active" : ""} onClick={() => setRequestTab("current")}>All</button><button type="button" role="tab" aria-selected={requestTab === "createdByMe"} className={requestTab === "createdByMe" ? "active" : ""} onClick={() => setRequestTab("createdByMe")}>Created by me</button></div>}
+      <div className="dpl-section-heading"><div><h2>{isArchive ? "Archive" : isAssignedToMe ? "Assigned to me" : isCreatedByMe ? "Created by me" : "All requests"}</h2><p>{isArchive ? "Completed, cancelled, rejected, and retired requests retained for reference." : isAssignedToMe ? "Requests with Jira work currently assigned to you." : isCreatedByMe ? "Requests you created in the portal." : "Track in-progress, waiting, and recently completed requests."}</p></div><div className="dpl-overview-header-note"><Info size={14} /><span>Select a request to open its workspace, including lifecycle and Jira tickets.</span></div></div>
+      {!isArchive && <div className="dpl-process-tabs" aria-label="Request status filter">
         {['All', 'In Progress', 'Waiting', 'Completed'].map((tab) => (
           <button key={tab} type="button" className={tab === selectedStatus ? "active" : ""} onClick={() => setSelectedStatus(tab)}>{tab}</button>
         ))}
       </div>}
       <div className="dpl-overview-list" aria-label="Request records">
-        {isDrafts && <p className="dpl-sidebar-empty">Draft requests are created from New request and retain their intake conversations.</p>}
         {visibleProcesses.map((request) => (
           <div className={`dpl-overview-request ${request.name === selectedRequestName ? "dpl-selected-request" : ""}`} key={request.name} role="button" tabIndex={0} onClick={() => onSelectRequest(request.name)} onKeyDown={(event) => {
             if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
@@ -350,7 +385,7 @@ function RunningRequestsOverview({ selectedRequestName, onSelectRequest, scope }
               onSelectRequest(request.name);
             }
           }}>
-            <div className="dpl-request-record-title"><div><strong>{request.title}</strong><span className={`dpl-table-status ${request.status.toLowerCase().replace(/\s+/g, "-")}`}>{request.status}</span></div><button type="button" className="dpl-request-pin" onClick={(event) => { event.stopPropagation(); togglePinnedRequest(request.name); }} title={pinnedRequestNames.includes(request.name) ? "Unpin request" : "Pin request"} aria-label={pinnedRequestNames.includes(request.name) ? `Unpin ${request.title}` : `Pin ${request.title}`}>{pinnedRequestNames.includes(request.name) ? <PinOff size={14} /> : <Pin size={14} />}</button></div>
+            <div className="dpl-request-record-title"><div><strong>{request.title}</strong><span className={`dpl-table-status ${request.status.toLowerCase().replace(/\s+/g, "-")}`}>{request.status}</span></div><div className="dpl-request-record-actions"><button type="button" className="dpl-request-pin" onClick={(event) => { event.stopPropagation(); togglePinnedRequest(request.name); }} title={pinnedRequestNames.includes(request.name) ? "Unpin request" : "Pin request"} aria-label={pinnedRequestNames.includes(request.name) ? `Unpin ${request.title}` : `Pin ${request.title}`}>{pinnedRequestNames.includes(request.name) ? <PinOff size={14} /> : <Pin size={14} />}</button></div></div>
             <div className="dpl-request-record-cell dpl-request-record-id"><span>Request ID</span><strong>{request.requestId}</strong></div>
             <div className="dpl-request-record-cell dpl-request-record-type"><span>Request Type</span><strong>{request.dataProductType}</strong></div>
             <div className="dpl-request-record-cell"><span>Requester</span><strong>{request.requester}</strong></div>
@@ -367,6 +402,60 @@ function RunningRequestsOverview({ selectedRequestName, onSelectRequest, scope }
 
 function DraftsOverview() {
   const [drafts, setDrafts] = useState<ThreadMetadata[]>([]);
+  const [pendingDeletion, setPendingDeletion] = useState<ThreadMetadata | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deletionError, setDeletionError] = useState("");
+
+  const removeDraft = async () => {
+    if (!pendingDeletion || deleting) return;
+    setDeleting(true);
+    setDeletionError("");
+    try {
+      const ids = JSON.parse(localStorage.getItem(businessCaseIdsStorageKey) ?? "{}") as Record<string, string>;
+      const intents = JSON.parse(localStorage.getItem("dpl-business-case-intents") ?? "{}") as Record<string, string>;
+      const draftIds = new Set([pendingDeletion.remoteId]);
+      const threads = await listThreads();
+      let previousSize = 0;
+      while (previousSize !== draftIds.size) {
+        previousSize = draftIds.size;
+        for (const thread of threads) {
+          if (thread.parentThreadId && draftIds.has(thread.parentThreadId)) draftIds.add(thread.remoteId);
+        }
+      }
+      for (const threadId of draftIds) {
+        const thread = threads.find((item) => item.remoteId === threadId);
+        await deleteThread(thread?.id ?? threadId);
+        const formId = ids[threadId];
+        if (formId) {
+          for (const prefix of ["dpl-business-case-draft", "dpl-intent-template-draft", "dpl-business-requirements-draft", "dpl-technical-design-draft"]) localStorage.removeItem(`${prefix}:${formId}`);
+        }
+        localStorage.removeItem(conversationStorageKey(`draft:${threadId}`));
+        localStorage.removeItem(conversationMessagesStorageKey(`draft:${threadId}`));
+        localStorage.removeItem(`dpl-request-intake-conversation:draft:${threadId}`);
+        const templatesKey = `dpl-conversation-templates:draft:${threadId}`;
+        const templates = JSON.parse(localStorage.getItem(templatesKey) ?? "{}") as Record<string, DraftConversationTemplate>;
+        const sharedTemplateKey = `dpl-draft-template:draft:${threadId}`;
+        const sharedTemplate = JSON.parse(localStorage.getItem(sharedTemplateKey) ?? "null") as DraftConversationTemplate | null;
+        for (const template of [...Object.values(templates), ...(sharedTemplate ? [sharedTemplate] : [])]) {
+          localStorage.removeItem(`dpl-business-case-draft:${template.id}`);
+          localStorage.removeItem(`dpl-intent-template-draft:${template.id}`);
+        }
+        localStorage.removeItem(templatesKey);
+        localStorage.removeItem(sharedTemplateKey);
+        delete ids[threadId];
+        delete intents[threadId];
+      }
+      localStorage.setItem(businessCaseIdsStorageKey, JSON.stringify(ids));
+      localStorage.setItem("dpl-business-case-intents", JSON.stringify(intents));
+      window.dispatchEvent(new CustomEvent("dpl-drafts-deleted", { detail: { threadIds: [...draftIds] } }));
+      setDrafts((current) => current.filter((draft) => !draftIds.has(draft.remoteId)));
+      setPendingDeletion(null);
+    } catch {
+      setDeletionError("The draft could not be completely removed. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     const refresh = async () => {
@@ -382,12 +471,15 @@ function DraftsOverview() {
   return <section className="dpl-panel dpl-running-overview" aria-label="Draft requests">
     <div className="dpl-section-heading"><div><h2>Drafts</h2><p>Continue an intake conversation or refine its shared One Pager before submission.</p></div></div>
     <div className="dpl-overview-list" aria-label="Draft request records">
-      {drafts.length === 0 ? <p className="dpl-sidebar-empty">No draft requests yet.</p> : drafts.map((draft) => <button type="button" className="dpl-overview-request dpl-draft-request" key={draft.remoteId} onClick={() => window.dispatchEvent(new CustomEvent("dpl-open-draft", { detail: { threadId: draft.remoteId } }))}>
-        <div className="dpl-request-record-title"><div><strong>{draft.title ?? "Untitled request"}</strong><span className="dpl-table-status waiting">Draft</span></div></div>
+      {drafts.length === 0 ? <p className="dpl-sidebar-empty">No draft requests yet.</p> : drafts.map((draft) => <div role="button" tabIndex={0} className="dpl-overview-request dpl-draft-request" key={draft.remoteId} onClick={() => window.dispatchEvent(new CustomEvent("dpl-open-draft", { detail: { threadId: draft.remoteId } }))} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); window.dispatchEvent(new CustomEvent("dpl-open-draft", { detail: { threadId: draft.remoteId } })); } }}>
+        <div className="dpl-request-record-title"><div><strong>{draft.title ?? "Untitled request"}</strong><span className="dpl-table-status waiting">Draft</span></div><div className="dpl-request-record-actions"><button type="button" className="dpl-request-access-button" title="Delete draft" aria-label={`Delete draft ${draft.title ?? "Untitled request"}`} onClick={(event) => { event.stopPropagation(); setDeletionError(""); setPendingDeletion(draft); }}><Trash2 size={14} /></button></div></div>
         <div className="dpl-request-record-cell"><span>Intake conversation</span><strong>Open draft</strong></div>
+        <div className="dpl-request-record-cell"><span>Stage</span><strong>Inception &amp; Scoping</strong></div>
+        <div className="dpl-request-record-cell"><span>Lifecycle sub-step</span><strong title="The lifecycle has not yet been triggered.">N/A (draft mode)</strong></div>
         <div className="dpl-request-record-cell"><span>Created</span><strong>{new Date(draft.createdAt).toLocaleDateString()}</strong></div>
-      </button>)}
+      </div>)}
     </div>
+    {pendingDeletion && <div className="dpl-request-dialog-backdrop" role="presentation"><section className="dpl-request-dialog dpl-conversation-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-draft-title"><div><p className="dpl-conversation-delete-dialog-label">Permanent action</p><h2 id="delete-draft-title">Delete draft?</h2><p><strong>{pendingDeletion.title ?? "Untitled request"}</strong>, its conversations, messages, and saved forms will be permanently deleted. This cannot be undone.</p>{deletionError && <p role="alert">{deletionError}</p>}</div><footer><button type="button" disabled={deleting} onClick={() => setPendingDeletion(null)}>Cancel</button><button type="button" className="dpl-conversation-delete-confirm" disabled={deleting} onClick={() => void removeDraft()}>{deleting ? "Deleting..." : "Delete draft"}</button></footer></section></div>}
   </section>;
 }
 
@@ -396,9 +488,35 @@ export function RequestWorkspace({ scope, selectedRequestName, onSelectRequest }
 }
 
 export function DraftWorkspace({ draftId, onBack }: { draftId: string; onBack: () => void }) {
+  const [draftTitle, setDraftTitle] = useState("Untitled request");
+  const [activeTemplate, setActiveTemplate] = useState<DraftConversationTemplate | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setDraftTitle("Untitled request");
+    setActiveTemplate(null);
+    const refresh = async () => {
+      const draft = await getThread(draftId);
+      if (active) setDraftTitle(draft?.title?.trim() || "Untitled request");
+    };
+    void refresh();
+    window.addEventListener(threadsChangedEvent, refresh);
+    return () => {
+      active = false;
+      window.removeEventListener(threadsChangedEvent, refresh);
+    };
+  }, [draftId]);
+
   return <section className="dpl-draft-workspace" aria-label="Draft request workspace">
-    <nav className="dpl-draft-workspace-identity" aria-label="Draft path"><button type="button" onClick={onBack}><ArrowLeft size={13} />Drafts</button><span aria-hidden="true">/</span><em>Draft workspace</em></nav>
-    <div className="dpl-draft-workspace-content"><RequestConversationsWorkspace requestName={`draft:${draftId}`} /><aside className="dpl-panel dpl-draft-workspace-empty" aria-label="Draft workspace" /></div>
+    <nav className="dpl-main-window-request-identity" aria-label="Draft path"><button type="button" onClick={onBack}><ArrowLeft size={13} />Drafts</button><span aria-hidden="true">/</span><em aria-current="page" title={`Workspace: ${draftTitle}`}>Workspace: {draftTitle}</em>{activeTemplate && <strong className="dpl-draft-intent-label">Intent: {activeTemplate.intention}</strong>}</nav>
+    <div className="dpl-draft-workspace-content">
+      <RequestConversationsWorkspace key={draftId} requestName={`draft:${draftId}`} allowDeletion onTemplateChange={setActiveTemplate} renderTemplate={(template, selectIntention) => template ? <aside id="dpl-draft-editor" className="dpl-panel dpl-workspace-shell dpl-draft-template-editor" aria-label="Draft template editor">
+        <div className="dpl-section-heading"><h2>Template</h2></div>
+        {draftIntentionTemplates[template.intention]
+          ? <IntentTemplateForm key={template.id} businessCaseId={template.id} template={draftIntentionTemplates[template.intention]!} allowSubmission />
+          : <BusinessCaseTemplate key={template.id} businessCaseId={template.id} intention={template.intention} />}
+      </aside> : <aside id="dpl-draft-editor" className="dpl-panel dpl-workspace-shell dpl-draft-template-editor dpl-draft-intent-picker" aria-label="Draft intent selection"><div className="dpl-section-heading"><h2>Template</h2></div><div className="dpl-draft-intent-picker-body"><div className="dpl-draft-intent-content"><p className="dpl-draft-intent-introduction">Already know what you need? Select an intent below. Not sure yet? Discuss your request with the AI in chat first.</p><div className="dpl-draft-conversation-intentions" aria-label="Request intentions">{draftConversationIntentions.map((intention) => <button type="button" key={intention} onClick={() => selectIntention(intention)}><span>{intention}</span><ArrowUpRight size={14} aria-hidden="true" /></button>)}</div></div></div></aside>} />
+    </div>
   </section>;
 }
 
@@ -410,49 +528,203 @@ function conversationMessagesStorageKey(requestName: string) {
   return `dpl-request-conversation-messages:${requestName}`;
 }
 
-export function RequestConversationsWorkspace({ requestName }: { requestName: string }) {
+const intakeConversationTitle = "Intake & Discovery Conversation (audit record)";
+const draftConversationIntentions = draftIntentions;
+type DraftConversationTemplate = { intention: DraftIntention; id: string };
+const draftIntentionTemplates: Partial<Record<DraftIntention, IntentTemplate>> = {
+  "Register Self-Service Data Product": intentTemplates["self-service-registration"],
+  "Enhance Existing Data Product": intentTemplates["product-enhancement"],
+  "Report Issue": intentTemplates["issue-report"],
+  "Request Retirement": intentTemplates["retirement-request"],
+};
+
+export function RequestConversationsWorkspace({ requestName, allowDeletion = false, editorVisible, onToggleEditor, onTemplateChange, onIntentionSelected, renderTemplate }: { requestName: string; allowDeletion?: boolean; editorVisible?: boolean; onToggleEditor?: () => void; onTemplateChange?: (template: DraftConversationTemplate | null) => void; onIntentionSelected?: () => void; renderTemplate?: (template: DraftConversationTemplate | null, selectIntention: (intention: DraftIntention) => void) => ReactNode }) {
   const [conversations, setConversations] = useState<string[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Record<string, string[]>>({});
+  const [messages, setMessages] = useState<Record<string, IntakeMessage[]>>({});
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
+  const assistantRequestRef = useRef<AbortController | null>(null);
   const [messageText, setMessageText] = useState("");
+  const messageInputRef = useRef<HTMLInputElement>(null);
+  const isDraftConversation = requestName.startsWith("draft:");
+  const defaultIntakeTitle = isDraftConversation ? "Intake & Discovery" : intakeConversationTitle;
   const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
   const [conversationName, setConversationName] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationPendingDeletion, setConversationPendingDeletion] = useState<string | null>(null);
+  const [intakeConversation, setIntakeConversation] = useState(intakeConversationTitle);
+  const intakeStorageKey = `dpl-request-intake-conversation:${requestName}`;
+  const templatesStorageKey = `dpl-conversation-templates:${requestName}`;
+  const [conversationTemplates, setConversationTemplates] = useState<Record<string, DraftConversationTemplate>>({});
+  const draftTemplateStorageKey = `dpl-draft-template:${requestName}`;
+  const [draftTemplate, setDraftTemplate] = useState<DraftConversationTemplate | null>(null);
+
+  useEffect(() => {
+    setAssistantBusy(false);
+    setAssistantError("");
+    return () => assistantRequestRef.current?.abort();
+  }, [requestName, selectedConversation]);
+
+  useEffect(() => {
+    onTemplateChange?.(isDraftConversation ? draftTemplate : selectedConversation ? conversationTemplates[selectedConversation] ?? null : null);
+  }, [selectedConversation, conversationTemplates, draftTemplate, isDraftConversation, onTemplateChange]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(conversationStorageKey(requestName));
-    const loaded = saved ? JSON.parse(saved) as string[] : ["Intake conversation"];
+    const loaded = saved ? JSON.parse(saved) as string[] : [defaultIntakeTitle, ...(!isDraftConversation ? requestWorkingConversations : [])];
+    const previousPreparationTitle = "STXAD Creation";
+    const preparationTitle = "STXAD Jira Ticket Preparation";
+    const migratePreparation = !isDraftConversation && loaded.includes(previousPreparationTitle) && !loaded.includes(preparationTitle);
+    if (migratePreparation) loaded[loaded.indexOf(previousPreparationTitle)] = preparationTitle;
+    if (!isDraftConversation && !window.localStorage.getItem(`dpl-request-working-conversations:${requestName}`)) {
+      for (const conversation of requestWorkingConversations) {
+        if (!loaded.includes(conversation)) loaded.push(conversation);
+      }
+      window.localStorage.setItem(conversationStorageKey(requestName), JSON.stringify(loaded));
+      window.localStorage.setItem(`dpl-request-working-conversations:${requestName}`, "initialized");
+    }
     const savedMessages = window.localStorage.getItem(conversationMessagesStorageKey(requestName));
+    const storedMessages = savedMessages ? JSON.parse(savedMessages) as Record<string, Array<string | IntakeMessage>> : {};
+    const loadedMessages = Object.fromEntries(Object.entries(storedMessages).map(([conversation, entries]) =>
+      [conversation, entries.map((message): IntakeMessage => typeof message === "string" ? { role: "user", content: message } : message)]));
+    if (migratePreparation) {
+      loadedMessages[preparationTitle] = loadedMessages[previousPreparationTitle] ?? [];
+      delete loadedMessages[previousPreparationTitle];
+      window.localStorage.setItem(conversationStorageKey(requestName), JSON.stringify(loaded));
+      window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(loadedMessages));
+    }
+    let intakeName = window.localStorage.getItem(intakeStorageKey) ?? (loaded.includes("Intake conversation") ? "Intake conversation" : loaded.includes(intakeConversationTitle) ? intakeConversationTitle : defaultIntakeTitle);
+    if ((intakeName === "Intake conversation" || intakeName === intakeConversationTitle) && intakeName !== defaultIntakeTitle && loaded.includes(intakeName) && !loaded.includes(defaultIntakeTitle)) {
+      loaded[loaded.indexOf(intakeName)] = defaultIntakeTitle;
+      loadedMessages[defaultIntakeTitle] = [...(loadedMessages[defaultIntakeTitle] ?? []), ...(loadedMessages[intakeName] ?? [])];
+      delete loadedMessages[intakeName];
+      intakeName = defaultIntakeTitle;
+      window.localStorage.setItem(conversationStorageKey(requestName), JSON.stringify(loaded));
+      window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(loadedMessages));
+      window.localStorage.setItem(intakeStorageKey, intakeName);
+    }
     setConversations(loaded);
+    const savedTemplates = window.localStorage.getItem(templatesStorageKey);
+    const loadedTemplates = savedTemplates ? JSON.parse(savedTemplates) as Record<string, DraftConversationTemplate> : {};
+    if (migratePreparation && loadedTemplates[previousPreparationTitle]) {
+      loadedTemplates[preparationTitle] = loadedTemplates[previousPreparationTitle];
+      delete loadedTemplates[previousPreparationTitle];
+      window.localStorage.setItem(templatesStorageKey, JSON.stringify(loadedTemplates));
+    }
+    setConversationTemplates(loadedTemplates);
+    const savedDraftTemplate = window.localStorage.getItem(draftTemplateStorageKey);
+    const legacyTemplates = Object.values(loadedTemplates);
+    const sharedTemplate = savedDraftTemplate ? JSON.parse(savedDraftTemplate) as DraftConversationTemplate : loadedTemplates[intakeName] ?? (legacyTemplates.length === 1 ? legacyTemplates[0] ?? null : null);
+    setDraftTemplate(isDraftConversation ? sharedTemplate : null);
+    if (isDraftConversation) {
+      const hadIntake = loaded.includes(intakeName);
+      if (intakeName === "Intake conversation" || intakeName === intakeConversationTitle) {
+        loadedMessages[defaultIntakeTitle] = [...(loadedMessages[defaultIntakeTitle] ?? []), ...(loadedMessages[intakeName] ?? [])];
+        delete loadedMessages[intakeName];
+        const oldIntakeIndex = loaded.indexOf(intakeName);
+        if (oldIntakeIndex >= 0) loaded.splice(oldIntakeIndex, 1);
+        intakeName = defaultIntakeTitle;
+      }
+      if ((!saved || hadIntake) && !loaded.includes(intakeName)) loaded.unshift(intakeName);
+      window.localStorage.setItem(conversationStorageKey(requestName), JSON.stringify(loaded));
+      window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(loadedMessages));
+      window.localStorage.setItem(intakeStorageKey, intakeName);
+      if (sharedTemplate) window.localStorage.setItem(draftTemplateStorageKey, JSON.stringify(sharedTemplate));
+    }
+    setIntakeConversation(intakeName);
+    setConversationPendingDeletion(null);
     setSelectedConversation(null);
-    setMessages(savedMessages ? JSON.parse(savedMessages) as Record<string, string[]> : {});
+    setMessages(loadedMessages);
     setMessageText("");
     setRenamingConversation(null);
     setConversationName("");
     setConversationSearch("");
-  }, [requestName]);
+  }, [requestName, intakeStorageKey, defaultIntakeTitle, templatesStorageKey, draftTemplateStorageKey, isDraftConversation]);
+
+  const isReadOnlyIntake = !isDraftConversation && selectedConversation === intakeConversation;
 
   const createConversation = () => {
-    const next = [...conversations, `Conversation ${conversations.length + 1}`];
+    let conversationNumber = conversations.length + 1;
+    while (conversations.includes(`Conversation ${conversationNumber}`)) conversationNumber += 1;
+    const next = [...conversations, isDraftConversation && !conversations.includes(intakeConversation) ? intakeConversation : `Conversation ${conversationNumber}`];
     setConversations(next);
     setSelectedConversation(next.at(-1) ?? null);
     window.localStorage.setItem(conversationStorageKey(requestName), JSON.stringify(next));
   };
 
-  const sendMessage = (event: React.FormEvent<HTMLFormElement>) => {
+  const sendMessage = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = messageText.trim();
-    if (!message || !selectedConversation) return;
-    const nextMessages = { ...messages, [selectedConversation]: [...(messages[selectedConversation] ?? []), message] };
+    if (!message || !selectedConversation || assistantBusy || isReadOnlyIntake) return;
+    const history: IntakeMessage[] = [...(messages[selectedConversation] ?? []), { role: "user", content: message }];
+    const nextMessages = { ...messages, [selectedConversation]: history };
     setMessages(nextMessages);
     setMessageText("");
     window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(nextMessages));
+    if (!isDraftConversation) return;
+    const controller = new AbortController();
+    assistantRequestRef.current = controller;
+    setAssistantBusy(true);
+    setAssistantError("");
+    try {
+      const settings = await loadSettings();
+      if (controller.signal.aborted) return;
+      const response = await fetch("/api/draft-intake", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-LLM-Provider": settings.provider,
+          "X-LLM-Model": settings.model,
+          "X-LLM-API-Key": settings.apiKey,
+          ...(settings.baseUrl ? { "X-LLM-Base-URL": settings.baseUrl } : {}),
+        },
+        body: JSON.stringify({
+          messages: history.slice(-100).map(({ role, content }) => ({ role, content })),
+          intention: draftTemplate?.intention,
+          isIntake: selectedConversation === intakeConversation,
+        }),
+      });
+      if (!response.ok) throw new Error(`The assistant could not respond (${response.status}). Check the provider settings and try again.`);
+      const result = await response.json() as IntakeResponse;
+      if (controller.signal.aborted) return;
+      if (typeof result.reply !== "string" || (result.proposedIntention != null && !draftIntentions.includes(result.proposedIntention))) {
+        throw new Error("The assistant returned an invalid response. Your message is saved.");
+      }
+      const completedMessages = { ...nextMessages, [selectedConversation]: [...history, { role: "assistant" as const, content: result.reply, proposedIntention: result.proposedIntention }] };
+      window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(completedMessages));
+      setMessages(completedMessages);
+    } catch (error) {
+      if (!controller.signal.aborted) setAssistantError(error instanceof Error ? error.message : "The assistant is unavailable. Your message is saved.");
+    } finally {
+      if (!controller.signal.aborted) setAssistantBusy(false);
+    }
+  };
+
+  const selectIntention = (intention: DraftIntention) => {
+    if (!isDraftConversation) return;
+    assistantRequestRef.current?.abort();
+    setAssistantBusy(false);
+    setAssistantError("");
+    const ids = JSON.parse(window.localStorage.getItem(businessCaseIdsStorageKey) ?? "{}") as Record<string, string>;
+    const template = { intention, id: draftTemplate?.id ?? ids[requestName.slice("draft:".length)] ?? `draft-template-${crypto.randomUUID()}` };
+    window.localStorage.setItem(draftTemplateStorageKey, JSON.stringify(template));
+    setDraftTemplate(template);
+    onTemplateChange?.(template);
+    onIntentionSelected?.();
+    if (selectedConversation) {
+      const nextMessages = { ...messages, [selectedConversation]: [...(messages[selectedConversation] ?? []), { role: "user" as const, content: intention }] };
+      setMessages(nextMessages);
+      window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(nextMessages));
+    }
+    setMessageText("");
+    messageInputRef.current?.focus();
   };
 
   const saveConversationName = () => {
     const nextName = conversationName.trim();
-    if (!renamingConversation || !nextName || nextName === renamingConversation || conversations.includes(nextName)) {
+    if (!renamingConversation || (!isDraftConversation && renamingConversation === intakeConversation) || !nextName || nextName === renamingConversation || conversations.includes(nextName)) {
       setRenamingConversation(null);
       return;
     }
@@ -462,11 +734,27 @@ export function RequestConversationsWorkspace({ requestName }: { requestName: st
     setConversations(nextConversations);
     setMessages(nextMessages);
     setRenamingConversation(null);
+    if (renamingConversation === intakeConversation) {
+      setIntakeConversation(nextName);
+      window.localStorage.setItem(intakeStorageKey, nextName);
+    }
+    const { [renamingConversation]: renamedTemplate, ...remainingTemplates } = conversationTemplates;
+    const nextTemplates = { ...remainingTemplates, ...(renamedTemplate ? { [nextName]: renamedTemplate } : {}) };
+    setConversationTemplates(nextTemplates);
+    window.localStorage.setItem(templatesStorageKey, JSON.stringify(nextTemplates));
     window.localStorage.setItem(conversationStorageKey(requestName), JSON.stringify(nextConversations));
     window.localStorage.setItem(conversationMessagesStorageKey(requestName), JSON.stringify(nextMessages));
   };
 
   const deleteConversation = (conversation: string) => {
+    if (!allowDeletion || (!isDraftConversation && conversation === intakeConversation)) return;
+    const { [conversation]: removedTemplate, ...nextTemplates } = conversationTemplates;
+    if (removedTemplate && removedTemplate.id !== draftTemplate?.id) {
+      window.localStorage.removeItem(`dpl-business-case-draft:${removedTemplate.id}`);
+      window.localStorage.removeItem(`dpl-intent-template-draft:${removedTemplate.id}`);
+    }
+    setConversationTemplates(nextTemplates);
+    window.localStorage.setItem(templatesStorageKey, JSON.stringify(nextTemplates));
     const nextConversations = conversations.filter((item) => item !== conversation);
     const { [conversation]: removedMessages, ...nextMessages } = messages;
     setConversations(nextConversations);
@@ -478,23 +766,40 @@ export function RequestConversationsWorkspace({ requestName }: { requestName: st
   };
 
   const visibleConversations = conversations.filter((conversation) => conversation.toLowerCase().includes(conversationSearch.trim().toLowerCase()));
+  const templatePanel = renderTemplate?.(draftTemplate, selectIntention);
 
   if (selectedConversation) {
     const conversationMessages = messages[selectedConversation] ?? [];
-    return <section className="dpl-panel dpl-request-conversations dpl-request-chat" aria-label={`${selectedConversation} chat`}>
-      <div className="dpl-section-heading dpl-conversations-heading"><div><button type="button" className="dpl-conversations-back" onClick={() => setSelectedConversation(null)}><ArrowLeft size={14} /> All conversations</button><h2>{selectedConversation}</h2></div></div>
+    const conversationTitle = selectedConversation === intakeConversation && selectedConversation === defaultIntakeTitle ? "Intake & Discovery Conversation" : selectedConversation;
+    return <><section className="dpl-panel dpl-request-conversations dpl-request-chat" aria-label={`${conversationTitle} chat`}>
+      <div className="dpl-section-heading dpl-conversations-heading"><div><button type="button" className="dpl-conversations-back" onClick={() => setSelectedConversation(null)}><ArrowLeft size={14} /> All conversations</button><h2>{conversationTitle}</h2></div>{isDraftConversation && onToggleEditor && <button type="button" className="dpl-draft-editor-toggle" aria-expanded={editorVisible} aria-controls={editorVisible ? "dpl-draft-editor" : undefined} title={editorVisible ? "Hide editor" : "Show editor"} onClick={onToggleEditor}>{editorVisible ? <EyeOff size={14} /> : <Eye size={14} />}<span>{editorVisible ? "Hide editor" : "Show editor"}</span></button>}</div>
       <div className="dpl-request-chat-messages" aria-live="polite">
-        {conversationMessages.map((message, index) => <div className="dpl-request-chat-message dpl-request-chat-message-user" key={`${message}-${index}`}>{message}</div>)}
+        {isDraftConversation && selectedConversation === intakeConversation && draftTemplate && <p className="dpl-request-workspace-note">Intent: {draftTemplate.intention}</p>}
+        {isDraftConversation && <div className="dpl-draft-conversation-welcome">
+          <p>Hi, I am your Data Product Lifecycle assistant. Tell me, how can I help you?</p>
+        </div>}
+        {conversationMessages.map((message, index) => <div className={`dpl-request-chat-message dpl-request-chat-message-${message.role === "assistant" ? "system" : "user"}`} key={index}>{message.content}</div>)}
+        {isDraftConversation && selectedConversation === intakeConversation && !draftTemplate && conversationMessages.at(-1)?.proposedIntention && <div className="dpl-draft-intent-proposal"><strong>Proposed intent: {conversationMessages.at(-1)!.proposedIntention}</strong><button type="button" className="dpl-draft-editor-toggle" onClick={() => selectIntention(conversationMessages.at(-1)!.proposedIntention!)}><Check size={14} aria-hidden="true" />Confirm intent</button></div>}
+        {assistantBusy && <p role="status" className="dpl-request-workspace-note">Assistant is responding...</p>}
+        {assistantError && <p role="alert" className="dpl-request-workspace-note">{assistantError}</p>}
       </div>
-      <form className="dpl-request-chat-composer" onSubmit={sendMessage}><input value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="Write a message" aria-label="Message" /><button type="submit" aria-label="Send message" disabled={!messageText.trim()}><Send size={15} /></button></form>
-    </section>;
+      {isReadOnlyIntake ? <p className="dpl-request-workspace-note">Audit record · Read-only</p> : <form className="dpl-request-chat-composer" onSubmit={(event) => void sendMessage(event)}><input ref={messageInputRef} value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="Write a message" aria-label="Message" /><button type="submit" aria-label="Send message" disabled={!messageText.trim() || assistantBusy}><Send size={15} /></button></form>}
+    </section>{templatePanel}</>;
   }
 
-  return <section className="dpl-panel dpl-request-conversations" aria-label="Request conversations">
+  return <><section className="dpl-panel dpl-request-conversations" aria-label="Request conversations">
     <div className="dpl-section-heading dpl-conversations-heading"><div><h2>Conversations</h2></div><div className="dpl-conversation-heading-actions"><label className="dpl-conversation-search"><Search size={13} /><input type="search" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Search" aria-label="Search conversations" /></label><button type="button" className="dpl-new-conversation-button" onClick={createConversation}>+ New conversation</button></div></div>
-    <div className="dpl-request-conversation-list">{visibleConversations.length ? visibleConversations.map((conversation) => <div className="dpl-request-conversation-row" key={conversation}>{renamingConversation === conversation ? <input autoFocus aria-label="Conversation name" value={conversationName} onChange={(event) => setConversationName(event.target.value)} onBlur={saveConversationName} onKeyDown={(event) => { if (event.key === "Enter") saveConversationName(); if (event.key === "Escape") setRenamingConversation(null); }} /> : <button type="button" onClick={() => setSelectedConversation(conversation)}><span>{conversation}</span></button>}<button type="button" className="dpl-conversation-rename-button" aria-label={`Rename ${conversation}`} title="Rename conversation" onClick={() => { setRenamingConversation(conversation); setConversationName(conversation); }}><Pencil size={13} /></button><button type="button" className="dpl-conversation-delete-button" aria-label={`Delete ${conversation}`} title="Delete conversation" onClick={() => setConversationPendingDeletion(conversation)}><Trash2 size={13} /></button></div>) : <p className="dpl-conversation-search-empty">No conversations match this search.</p>}</div>
-    {conversationPendingDeletion && <div className="dpl-request-dialog-backdrop" role="presentation"><section className="dpl-request-dialog dpl-conversation-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-conversation-title"><div><p className="dpl-conversation-delete-dialog-label">Permanent action</p><h2 id="delete-conversation-title">Delete conversation?</h2><p><strong>{conversationPendingDeletion}</strong> and all its messages will be permanently deleted. This cannot be restored.</p></div><footer><button type="button" onClick={() => setConversationPendingDeletion(null)}>Cancel</button><button type="button" className="dpl-conversation-delete-confirm" onClick={() => deleteConversation(conversationPendingDeletion)}>Delete conversation</button></footer></section></div>}
-  </section>;
+    <div className="dpl-request-conversation-list">{visibleConversations.length ? visibleConversations.map((conversation) => <div className="dpl-request-conversation-row" key={conversation}>
+      {renamingConversation === conversation ? <input autoFocus aria-label="Conversation name" value={conversationName} onChange={(event) => setConversationName(event.target.value)} onBlur={saveConversationName} onKeyDown={(event) => { if (event.key === "Enter") saveConversationName(); if (event.key === "Escape") setRenamingConversation(null); }} /> : <button type="button" className="dpl-conversation-open" title={!isDraftConversation && conversation === intakeConversation ? "Protected conversation. Renaming and deletion are disabled." : undefined} onClick={() => setSelectedConversation(conversation)}>
+        {!isDraftConversation && conversation === intakeConversation && <ShieldCheck className="dpl-conversation-shield" size={14} aria-hidden="true" />}
+        <span className="dpl-conversation-title">{conversation === intakeConversation && conversation === defaultIntakeTitle ? "Intake & Discovery Conversation" : conversation}</span>
+        {!isDraftConversation && conversation === intakeConversation && <span className="dpl-conversation-audit-label">Audit record</span>}
+      </button>}
+      {(isDraftConversation || conversation !== intakeConversation) && <button type="button" className="dpl-conversation-rename-button" aria-label={`Rename ${conversation}`} title="Rename conversation" onClick={() => { setRenamingConversation(conversation); setConversationName(conversation); }}><Pencil size={13} /></button>}
+      {allowDeletion && (isDraftConversation || conversation !== intakeConversation) && <button type="button" className="dpl-conversation-delete-button" aria-label={`Delete ${conversation}`} title="Delete conversation" onClick={() => setConversationPendingDeletion(conversation)}><Trash2 size={13} /></button>}
+    </div>) : <p className="dpl-conversation-search-empty">No conversations match this search.</p>}</div>
+    {allowDeletion && conversationPendingDeletion && <div className="dpl-request-dialog-backdrop" role="presentation"><section className="dpl-request-dialog dpl-conversation-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-conversation-title"><div><p className="dpl-conversation-delete-dialog-label">Permanent action</p><h2 id="delete-conversation-title">Delete conversation?</h2><p><strong>{conversationPendingDeletion}</strong> and all its messages will be permanently deleted. This cannot be restored.</p></div><footer><button type="button" onClick={() => setConversationPendingDeletion(null)}>Cancel</button><button type="button" className="dpl-conversation-delete-confirm" onClick={() => deleteConversation(conversationPendingDeletion)}>Delete conversation</button></footer></section></div>}
+  </section>{templatePanel}</>;
 }
 
 export function HelpWorkspace() {
@@ -515,7 +820,7 @@ function CurrentProcess({ request, viewControls }: { request: RequestedProcess; 
     (step) => step.shortLabel === request.stage || step.label.startsWith(request.stage),
   );
   const [openStage, setOpenStage] = useState<string>(lifecycle[activeStepIndex]?.label ?? lifecycle[0].label);
-  const completedStages = request.status === "Completed" ? lifecycle.length : Math.max(activeStepIndex, 0);
+  const completedStages = Math.max(activeStepIndex, 0) + (request.status === "Completed" && activeStepIndex >= 0 ? 1 : 0);
   const lifecycleProgress = Math.round((completedStages / lifecycle.length) * 100);
 
   return (
@@ -532,13 +837,13 @@ function CurrentProcess({ request, viewControls }: { request: RequestedProcess; 
         <div className="dpl-stepper" aria-label="Lifecycle tracker">
           {lifecycle.map((step, index) => (
             (() => {
-              const state = request.status === "Completed" || index < activeStepIndex
+              const state = index < activeStepIndex || (request.status === "Completed" && index === activeStepIndex)
                 ? "complete"
                 : index === activeStepIndex ? "active" : "pending";
               const expanded = openStage === step.label;
               const details = stageDetails[step.label]!;
               const currentTaskIndex = step.label === request.stage
-                ? details.tasks.findIndex(([task]) => task === request.currentSubstep)
+                ? details.tasks.findIndex((task) => task.name === request.currentSubstep || (task.name === "Request Approved or Request Rejected" && ["Request Approved", "Request Rejected"].includes(request.currentSubstep)))
                 : -1;
               return <section className={`dpl-step dpl-lifecycle-${state} ${expanded ? "dpl-step-expanded" : ""}`} key={step.label}>
                 <button
@@ -558,19 +863,18 @@ function CurrentProcess({ request, viewControls }: { request: RequestedProcess; 
                 {expanded && (details.description || details.tasks.length > 0) && (
                   <div className="dpl-step-content" id={`lifecycle-stage-${index}`}>
                     {details.description && <p>{details.description}</p>}
-                    {step.label === request.stage && <div className="dpl-stage-status-row" aria-label="Current stage status">
-                      <span><UserRound size={12} /><b>Current assignee</b>{request.currentOwner}</span>
-                      <span><Clock3 size={12} /><b>SLA</b>{request.sla}</span>
-                      <span><b>Last update</b>{request.updated}</span>
-                    </div>}
                     {details.tasks.length > 0 && <ul className="dpl-checklist">
-                      {details.tasks.map(([name, taskState], taskIndex) => {
-                        const resolvedState = step.label === request.stage && currentTaskIndex >= 0
+                      {details.tasks.map(({ name, responsible, optional }, taskIndex) => {
+                        const skipped = optional && request.currentSubstep !== name;
+                        const resolvedState = skipped ? "pending" : state === "complete" ? "complete" : state === "active" && currentTaskIndex >= 0
                           ? taskIndex < currentTaskIndex ? "complete" : taskIndex === currentTaskIndex ? "active" : "pending"
-                          : taskState;
+                          : "pending";
+                        const displayName = name === "Request Approved or Request Rejected" && (state === "complete" || ["Request Approved", "Request Rejected"].includes(request.currentSubstep))
+                          ? request.currentSubstep === "Request Rejected" ? "Request Rejected" : "Request Approved"
+                          : name;
                         return <li key={name} className={`dpl-check-${resolvedState}`}>
                           {resolvedState === "complete" ? <Check size={14} /> : resolvedState === "active" ? <span className="dpl-active-dot" /> : <Circle size={14} />}
-                          <span>{name}</span>
+                          <span className="dpl-lifecycle-task-copy"><span>{displayName}{optional && " (if required)"}</span><small>Assigned to: {responsible ?? "Not specified"}</small></span>
                         </li>;
                       })}
                     </ul>}
@@ -588,21 +892,25 @@ function CurrentProcess({ request, viewControls }: { request: RequestedProcess; 
 export function LifecycleDashboard({ selectedRequestName, mode, businessCaseId, onShowRecords, overlay = false }: { selectedRequestName: string | null; mode: "overview" | "record" | "businessCase"; businessCaseId: string | null; onShowRecords: () => void; overlay?: boolean }) {
   const selectedRequest = selectedRequestName ? requestedProcesses.find((request) => request.name === selectedRequestName) : undefined;
   const intentTemplate = Object.entries(intentTemplates).find(([prefix]) => businessCaseId?.startsWith(`${prefix}-`));
-  const [recordView, setRecordView] = useState<"dashboard" | "template">("dashboard");
+  const [recordView, setRecordView] = useState<"dashboard" | "business" | "template">("dashboard");
 
   useEffect(() => {
     setRecordView("dashboard");
   }, [selectedRequestName]);
 
   const recordTemplateId = selectedRequest?.requestId ?? "request-template";
+  const recordTemplate = recordView === "business"
+    ? <BusinessCaseTemplate key={`${recordTemplateId}-one-pager`} businessCaseId={recordTemplateId} readOnly />
+    : <BusinessRequirementsTemplate key={`${recordTemplateId}-business-requirements`} businessCaseId={recordTemplateId} />;
   const recordViewControls = <div className="dpl-record-view-switch" aria-label="Request workspace views">
     <button type="button" className={recordView === "dashboard" ? "active" : ""} onClick={() => setRecordView("dashboard")}>Lifecycle Tracker</button>
+    <button type="button" className={recordView === "business" ? "active" : ""} onClick={() => setRecordView("business")}>Business Jira</button>
     <button type="button" className={recordView === "template" ? "active" : ""} onClick={() => setRecordView("template")}>STXAD Jira</button>
   </div>;
 
   return (
     <aside className={`dpl-dashboard${mode === "businessCase" ? " dpl-dashboard-workspace" : ""}${overlay ? " dpl-dashboard-overlay" : ""}`} style={{ minHeight: 0, overflow: "hidden" }}>
-      {mode === "businessCase" ? <section className="dpl-panel dpl-workspace-shell"><div className="dpl-section-heading"><div><h2>Request Workspace</h2><p>Draft and refine the information needed for this request.</p></div></div>{businessCaseId?.startsWith("business-requirements-") ? <BusinessRequirementsTemplate key={businessCaseId} businessCaseId={businessCaseId} /> : businessCaseId?.startsWith("technical-design-") ? <TechnicalDesignTemplate key={businessCaseId} businessCaseId={businessCaseId} /> : intentTemplate ? <IntentTemplateForm key={businessCaseId} businessCaseId={businessCaseId ?? "new-intent-template"} template={intentTemplate[1]} /> : <BusinessCaseTemplate key={businessCaseId ?? "new-business-case"} businessCaseId={businessCaseId ?? "new-business-case"} />}</section> : mode === "record" && selectedRequest ? recordView === "dashboard" ? <CurrentProcess request={selectedRequest} viewControls={recordViewControls} /> : <section className="dpl-panel dpl-workspace-shell dpl-record-template"><div className="dpl-section-heading">{recordViewControls}</div><BusinessRequirementsTemplate key={`${recordTemplateId}-business-requirements`} businessCaseId={recordTemplateId} /></section> : <section className="dpl-panel dpl-context-placeholder"><LayoutGrid size={18} aria-hidden="true" /><h2>Contextual workspace</h2><p>Select an intention to open a supporting template, or select a request to view its lifecycle dashboard.</p></section>}
+      {mode === "businessCase" ? <section className="dpl-panel dpl-workspace-shell"><div className="dpl-section-heading"><div><h2>Request Workspace</h2><p>Draft and refine the information needed for this request.</p></div></div>{businessCaseId?.startsWith("business-requirements-") ? <BusinessRequirementsTemplate key={businessCaseId} businessCaseId={businessCaseId} /> : businessCaseId?.startsWith("technical-design-") ? <TechnicalDesignTemplate key={businessCaseId} businessCaseId={businessCaseId} /> : intentTemplate ? <IntentTemplateForm key={businessCaseId} businessCaseId={businessCaseId ?? "new-intent-template"} template={intentTemplate[1]} /> : <BusinessCaseTemplate key={businessCaseId ?? "new-business-case"} businessCaseId={businessCaseId ?? "new-business-case"} />}</section> : mode === "record" && selectedRequest ? recordView === "dashboard" ? <CurrentProcess request={selectedRequest} viewControls={recordViewControls} /> : <section className="dpl-panel dpl-workspace-shell dpl-record-template"><div className="dpl-section-heading">{recordViewControls}</div>{recordView === "business" && <a className="dpl-link-button" href={`https://devopsjira.deutsche-boerse.com/browse/${selectedRequest.businessJira}`} target="_blank" rel="noopener noreferrer">{selectedRequest.businessJira} <ExternalLink size={12} aria-hidden="true" /></a>}{recordTemplate}</section> : <section className="dpl-panel dpl-context-placeholder"><LayoutGrid size={18} aria-hidden="true" /><h2>Contextual workspace</h2><p>Select an intention to open a supporting template, or select a request to view its lifecycle dashboard.</p></section>}
     </aside>
   );
 }
