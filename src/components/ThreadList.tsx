@@ -197,7 +197,7 @@ function ConversationList({ visible, onConversationSelected, onConversationRemov
   );
 }
 
-export function ThreadList({ skills, onSkillClick, onNewSkill, onConversationSelected, onConversationRemoved, onOpenSettings, onNewChat, onReviewJira, onOpenDashboard, onOpenCurrentRequests, onOpenDrafts, onOpenArchive, onOpenRequest, onOpenHelp, activeWorkspace = "chat", variant = "widget", showSkills = true }: Props) {
+export function ThreadList({ skills, onSkillClick, onNewSkill, onConversationSelected, onConversationRemoved, onOpenSettings, onNewChat, onReviewJira, onOpenDashboard, onOpenCurrentRequests, onOpenArchive, onOpenRequest, onOpenHelp, activeWorkspace = "chat", variant = "widget", showSkills = true }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [pinnedRequestsOpen, setPinnedRequestsOpen] = useState(true);
   const [pinnedRequests, setPinnedRequests] = useState<string[]>([]);
@@ -239,13 +239,9 @@ export function ThreadList({ skills, onSkillClick, onNewSkill, onConversationSel
               <LayoutDashboard className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Dashboard</span>
             </button>
-            <button type="button" className={activeWorkspace === "currentRequests" ? "active" : ""} onClick={onOpenCurrentRequests}>
+            <button type="button" className={activeWorkspace === "currentRequests" || activeWorkspace === "draftWorkspace" ? "active" : ""} onClick={onOpenCurrentRequests}>
               <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Requests</span>
-            </button>
-            <button type="button" className={activeWorkspace === "drafts" ? "active" : ""} onClick={() => { window.dispatchEvent(new Event("dpl-open-drafts")); onOpenDrafts?.(); }}>
-              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Drafts</span>
             </button>
             <div className="dpl-sidebar-expandable">
               <div><button type="button" className="dpl-sidebar-expandable-label" onClick={() => setPinnedRequestsOpen((open) => !open)}><Pin className="h-3.5 w-3.5" aria-hidden="true" /><span>Pinned requests</span></button><button type="button" className="dpl-sidebar-expand-toggle" aria-label={pinnedRequestsOpen ? "Collapse pinned requests" : "Expand pinned requests"} title={pinnedRequestsOpen ? "Collapse pinned requests" : "Expand pinned requests"} onClick={() => setPinnedRequestsOpen((open) => !open)}>{pinnedRequestsOpen ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}</button></div>
